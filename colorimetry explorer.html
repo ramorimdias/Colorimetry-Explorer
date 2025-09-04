@@ -458,15 +458,20 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
       const n = parseFloat(s);
       return isNaN(n) ? NaN : n;
     }
+    const COLOR_PALETTE = Array.from({length:20}, (_, i) => `hsl(${i*18},70%,50%)`);
+    for (let i = COLOR_PALETTE.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [COLOR_PALETTE[i], COLOR_PALETTE[j]] = [COLOR_PALETTE[j], COLOR_PALETTE[i]];
+    }
     function hashColor(key) {
-      // Generate a broadly distributed HSL colour based on string hash
+      // Map a string key into the shuffled palette for up to 20 distinct colours
       let hash = 2166136261;
       for (let i = 0; i < key.length; i++) {
         hash ^= key.charCodeAt(i);
         hash = Math.imul(hash, 16777619);
       }
-      const hue = (hash >>> 0) % 360;
-      return `hsl(${hue},70%,50%)`;
+      const idx = (hash >>> 0) % COLOR_PALETTE.length;
+      return COLOR_PALETTE[idx];
     }
     function download(filename, text) {
       const blob = new Blob([text], {type:'text/plain'});
@@ -1185,7 +1190,8 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         }
       }
       // plot samples.  Build a list of selected samples to compute label
-      // offsets.  Each label shows the sample name and L*a*b* values.
+      // offsets and to feed the legend.  Each label shows the sample name
+      // and L*a*b* values.
       const selectedAB = filteredSamples().filter(s => state.selected.has(s.id));
       selectedAB.forEach(sample => {
         const a = sample['a*'];
@@ -1193,19 +1199,18 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         if (!isFinite(a) || !isFinite(b)) return;
         const x = originX + (a / AB_RANGE) * maxRadius;
         const y = originY - (b / AB_RANGE) * maxRadius;
-        const pt = document.createElementNS('http://www.w3.org/2000/svg','circle');
-        pt.setAttribute('cx', x);
-        pt.setAttribute('cy', y);
-        pt.setAttribute('r', 5);
+        const size = 5;
+        const tri = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+        tri.setAttribute('points', `${x},${y-size} ${x-size},${y+size} ${x+size},${y+size}`);
         // fill with actual Lab colour if available, fallback to palette
         if (sample.hex) {
-          pt.setAttribute('fill', sample.hex);
+          tri.setAttribute('fill', sample.hex);
         } else {
-          pt.setAttribute('fill', getSampleColor(sample));
+          tri.setAttribute('fill', getSampleColor(sample));
         }
-        pt.setAttribute('stroke', 'currentColor');
-        pt.setAttribute('stroke-width', '0.5');
-        pt.addEventListener('mousemove', evt => {
+        tri.setAttribute('stroke', 'currentColor');
+        tri.setAttribute('stroke-width', '0.5');
+        tri.addEventListener('mousemove', evt => {
           const lines = [];
           lines.push(sample['Name']);
           if (isFinite(sample['L*']) && isFinite(sample['a*']) && isFinite(sample['b*'])) {
@@ -1213,8 +1218,8 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
           }
           showTooltip(evt.clientX, evt.clientY, lines.join('\n'));
         });
-        pt.addEventListener('mouseleave', hideTooltip);
-        plotGroup.appendChild(pt);
+        tri.addEventListener('mouseleave', hideTooltip);
+        plotGroup.appendChild(tri);
         // Label for the sample.  When labels are enabled or exporting,
         // this text is visible.  Offset vertically based on the sample
         // index to reduce overlap, and include L*, a* and b* values.
@@ -1232,6 +1237,31 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         lbl.textContent = text;
         plotGroup.appendChild(lbl);
       });
+
+      // legend for selected samples with Lab values
+      const legend = document.createElementNS('http://www.w3.org/2000/svg','g');
+      const legendX = width - padding + 10;
+      const legendY = padding;
+      selectedAB.forEach((sample, idx) => {
+        const swatch = document.createElementNS('http://www.w3.org/2000/svg','rect');
+        swatch.setAttribute('x', legendX);
+        swatch.setAttribute('y', legendY + idx * 14);
+        swatch.setAttribute('width', 12);
+        swatch.setAttribute('height', 12);
+        swatch.setAttribute('fill', sample.hex || getSampleColor(sample));
+        legend.appendChild(swatch);
+        const txt = document.createElementNS('http://www.w3.org/2000/svg','text');
+        txt.setAttribute('x', legendX + 16);
+        txt.setAttribute('y', legendY + idx * 14 + 10);
+        txt.setAttribute('font-size', '10');
+        let label = sample['Name'];
+        if (isFinite(sample['L*']) && isFinite(sample['a*']) && isFinite(sample['b*'])) {
+          label += ` (L: ${sample['L*'].toFixed(2)}, a: ${sample['a*'].toFixed(2)}, b: ${sample['b*'].toFixed(2)})`;
+        }
+        txt.textContent = label;
+        legend.appendChild(txt);
+      });
+      svg.appendChild(legend);
     }
     function drawL() {
       const svg = document.getElementById('lChart');
