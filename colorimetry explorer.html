@@ -459,15 +459,14 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
       return isNaN(n) ? NaN : n;
     }
     function hashColor(key) {
-      // Generate HSL color based on string hash for deterministic palette
-      let hash = 0;
+      // Generate a broadly distributed HSL colour based on string hash
+      let hash = 2166136261;
       for (let i = 0; i < key.length; i++) {
-        hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+        hash ^= key.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
       }
-      const hue = Math.abs(hash) % 360;
-      const sat = 60 + (Math.abs(hash) % 20);
-      const light = 40 + (Math.abs(hash) % 20);
-      return `hsl(${hue},${sat}%,${light}%)`;
+      const hue = (hash >>> 0) % 360;
+      return `hsl(${hue},70%,50%)`;
     }
     function download(filename, text) {
       const blob = new Blob([text], {type:'text/plain'});
@@ -1004,32 +1003,6 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
           const tri = document.createElementNS('http://www.w3.org/2000/svg','polygon');
           tri.setAttribute('points', `${x},${y-size} ${x-size},${y+size} ${x+size},${y+size}`);
           tri.setAttribute('fill', getSampleColor(sample));
-          // colour chip (rounded square) using actual Lab colour if available
-          if (sample.hex) {
-            const chipSize = 8;
-            const chip = document.createElementNS('http://www.w3.org/2000/svg','rect');
-            chip.setAttribute('x', x + size + 2);
-            chip.setAttribute('y', y - chipSize/2);
-            chip.setAttribute('width', chipSize);
-            chip.setAttribute('height', chipSize);
-            chip.setAttribute('rx', 2);
-            chip.setAttribute('ry', 2);
-            chip.setAttribute('fill', sample.hex);
-            chip.setAttribute('stroke', 'var(--border)');
-            chip.setAttribute('stroke-width', '0.5');
-            chip.addEventListener('mousemove', evt => {
-              const tooltipLines = [];
-              tooltipLines.push(sample['Name']);
-              tooltipLines.push(`${sc.name}: ${isFinite(usedVal) ? usedVal.toFixed(1) : ''}`);
-              tooltipLines.push(`${sample['Date']} ${sample['Time']}`);
-              if (isFinite(sample['L*']) && isFinite(sample['a*']) && isFinite(sample['b*'])) {
-                tooltipLines.push(`L*: ${sample['L*'].toFixed(2)}  a*: ${sample['a*'].toFixed(2)}  b*: ${sample['b*'].toFixed(2)}`);
-              }
-              showTooltip(evt.clientX, evt.clientY, tooltipLines.join('\n'));
-            });
-            chip.addEventListener('mouseleave', hideTooltip);
-            svg.appendChild(chip);
-          }
           tri.addEventListener('mousemove', evt => {
             const tooltipLines = [];
             tooltipLines.push(sample['Name']);
@@ -1048,7 +1021,7 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
           // vertically according to the sample’s position in the list to
           // reduce overlap.
           const label = document.createElementNS('http://www.w3.org/2000/svg','text');
-          const labelX = x + size + (sample.hex ? 8 : 0) + 6;
+          const labelX = x + size + 6;
           const idx = selectedList.findIndex(s => s.id === sample.id);
           const labelY = y + 4 + idx * 12;
           label.setAttribute('x', labelX);
