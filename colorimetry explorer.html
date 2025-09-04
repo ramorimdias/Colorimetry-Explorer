@@ -660,7 +660,7 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
       // The image provided shows discrete steps at half‑unit increments; we
       // interpolate between a broader set of anchor points to give a smooth
       // gradient. See user‑supplied chart for target colours.
-      'ASTMd1500': [
+      'ASTM D1500': [
         { value: 0,   color: '#fff9c4' }, // very pale yellow
         { value: 1,   color: '#ffe173' }, // light golden
         { value: 2,   color: '#ffb100' }, // orange
@@ -911,7 +911,7 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
       svg.appendChild(defs);
       const scales = [
         // ASTM D1500 scale ranges from 0 to 8. Gardner is no longer used.
-        {name:'ASTMd1500', min:0, max:8, step:1, valKey:'ASTM'},
+        {name:'ASTM D1500', min:0, max:8, step:1, valKey:'ASTM'},
         {name:'Saybolt', min:-16, max:30, step:2, valKey:'Saybolt'},
         {name:'Pt-Co (Hazen)', min:0, max:500, step:50, valKey:'Pt-Co'},
       ];
@@ -936,10 +936,10 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
           gradient.appendChild(stopEl);
         });
         defs.appendChild(gradient);
-        // Draw the colour bar behind the axis line.  Increase thickness
-        // relative to the original design to better fill the available
-        // vertical space at 125% zoom.  A 30px height gives clear
-        // delineation of the gradient without overwhelming the axis.
+        // Draw the colour bar. Increase thickness relative to the original
+        // design to better fill the available vertical space at 125% zoom.
+        // A 30px height gives clear delineation of the gradient without
+        // overwhelming the axis.
         const barHeight = 30;
         const barY = y0 + chartHeight/2 - barHeight/2;
         const bar = document.createElementNS('http://www.w3.org/2000/svg','rect');
@@ -949,27 +949,29 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         bar.setAttribute('height', barHeight);
         bar.setAttribute('fill', `url(#${gradId})`);
         svg.appendChild(bar);
-        // axis line
+        // axis line positioned below the colour bar so that ticks and
+        // labels remain legible against the background colours
+        const axisY = barY + barHeight + 6;
         const line = document.createElementNS('http://www.w3.org/2000/svg','line');
         line.setAttribute('x1', padding.left);
         line.setAttribute('x2', width - padding.right);
-        line.setAttribute('y1', y0 + chartHeight/2);
-        line.setAttribute('y2', y0 + chartHeight/2);
+        line.setAttribute('y1', axisY);
+        line.setAttribute('y2', axisY);
         line.setAttribute('stroke', 'currentColor');
         svg.appendChild(line);
-        // ticks
+        // ticks and numeric labels beneath the bar
         for (let v=sc.min; v<=sc.max; v+=sc.step) {
           const x = padding.left + (v - sc.min)/(sc.max - sc.min) * (width - padding.left - padding.right);
           const tick = document.createElementNS('http://www.w3.org/2000/svg','line');
           tick.setAttribute('x1', x);
           tick.setAttribute('x2', x);
-          tick.setAttribute('y1', y0 + chartHeight/2 - 4);
-          tick.setAttribute('y2', y0 + chartHeight/2 + 4);
+          tick.setAttribute('y1', axisY);
+          tick.setAttribute('y2', axisY - 6);
           tick.setAttribute('stroke', 'currentColor');
           svg.appendChild(tick);
           const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
           lbl.setAttribute('x', x);
-          lbl.setAttribute('y', y0 + chartHeight/2 + 15);
+          lbl.setAttribute('y', axisY + 12);
           lbl.setAttribute('text-anchor', 'middle');
           lbl.setAttribute('font-size', '10');
           lbl.textContent = v;
@@ -1625,6 +1627,27 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
           svg.appendChild(label);
         }
       });
+
+      // legend indicating sample colours
+      const legend = document.createElementNS('http://www.w3.org/2000/svg','g');
+      const legendX = width - padding.right + 10;
+      const legendY = padding.top;
+      samplesToPlot.forEach((sample, idx) => {
+        const swatch = document.createElementNS('http://www.w3.org/2000/svg','rect');
+        swatch.setAttribute('x', legendX);
+        swatch.setAttribute('y', legendY + idx * 14);
+        swatch.setAttribute('width', 12);
+        swatch.setAttribute('height', 12);
+        swatch.setAttribute('fill', getSampleColor(sample));
+        legend.appendChild(swatch);
+        const txt = document.createElementNS('http://www.w3.org/2000/svg','text');
+        txt.setAttribute('x', legendX + 16);
+        txt.setAttribute('y', legendY + idx * 14 + 10);
+        txt.setAttribute('font-size','10');
+        txt.textContent = sample['Name'];
+        legend.appendChild(txt);
+      });
+      svg.appendChild(legend);
     }
     function drawDetails() {
       const div = document.getElementById('detailsCard');
