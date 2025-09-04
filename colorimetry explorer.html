@@ -1,0 +1,2073 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Colorimetry Explorer</title>
+  <style>
+    /*
+      Colorimetry Explorer – Single page application
+      ------------------------------------------------
+      This file contains all of the markup, styling and JavaScript required
+      to load one or more CSVs exported from a colorimeter and explore the
+      resulting colour information. The goal is to remain fully offline and
+      self contained with no external dependencies.
+
+      Design notes:
+      * CSS variables allow the site to adapt to light or dark mode using
+        prefers‑color‑scheme. We pick sensible defaults and override them
+        when dark mode is preferred.
+      * A responsive layout divides the interface into a header bar,
+        sidebar for sample selection and a main content area with tabs.
+      * Charts are drawn using plain SVG for crisp export and to avoid
+        reliance on charting libraries. Helper functions further down in
+        the file encapsulate common drawing tasks like axes and paths.
+    */
+    :root {
+      --bg: #fdfdfd;
+      --fg: #1a1a1a;
+      --accent: #0066cc;
+      --border: #ccc;
+      --panel-bg: #ffffff;
+      --hover: #f0f0f0;
+      --warning-bg: #fffbe0;
+      --warning-fg: #665c00;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1e1e1e;
+        --fg: #eaeaea;
+        --accent: #4ea8de;
+        --border: #444;
+        --panel-bg: #2c2c2c;
+        --hover: #353535;
+        --warning-bg: #665c00;
+        --warning-fg: #fff1a8;
+      }
+    }
+    /* Explicit dark mode toggler overrides via .dark class on the html element.
+       This allows users to force dark mode regardless of system preferences. */
+    :root.dark {
+      /* When the document has a .dark class, override colour variables regardless of system prefs */
+      --bg: #1e1e1e;
+      --fg: #eaeaea;
+      --accent: #4ea8de;
+      --border: #444;
+      --panel-bg: #2c2c2c;
+      --hover: #353535;
+      --warning-bg: #665c00;
+      --warning-fg: #fff1a8;
+    }
+    /* Similarly, an explicit .light class forces light variables even if the OS prefers dark mode. */
+    :root.light {
+      --bg: #fdfdfd;
+      --fg: #1a1a1a;
+      --accent: #0066cc;
+      --border: #ccc;
+      --panel-bg: #ffffff;
+      --hover: #f0f0f0;
+      --warning-bg: #fffbe0;
+      --warning-fg: #665c00;
+    }
+
+    /* Enlarge the entire UI by scaling the page up by 1.25×. This improves readability
+       and gives charts and controls more breathing room. */
+    body {
+      /* Increase the default font size to zoom the interface to ~125% without
+         using CSS transforms. This avoids introducing horizontal scrollbars
+         while still enlarging text and controls. */
+      font-size: 1.25em;
+    }
+
+    /* Export labels are hidden by default but shown when the root element has
+       the `.exporting` class applied. */
+    .label-export {
+      display: none;
+      font-size: 9px;
+      fill: currentColor;
+    }
+    :root.exporting .label-export {
+      display: block;
+    }
+
+    /* When the root has .show-labels class, force export labels to be
+       visible in the interface. This allows the user to toggle labels on
+       permanently without entering export mode. */
+    :root.show-labels .label-export {
+      display: block;
+    }
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--fg);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.5rem 1rem;
+      border-bottom: 1px solid var(--border);
+      background-color: var(--panel-bg);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    header h1 {
+      font-size: 1.2rem;
+      margin: 0;
+      white-space: nowrap;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      flex: 1;
+    }
+    .toolbar label {
+      font-size: 0.9rem;
+      margin-right: 0.25rem;
+    }
+    .toolbar input[type="file"] {
+      display: none;
+    }
+    .upload-zone {
+      border: 2px dashed var(--border);
+      padding: 0.5rem 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .upload-zone.dragover {
+      border-color: var(--accent);
+      background-color: var(--hover);
+    }
+    select, input[type="search"], button {
+      padding: 0.3rem 0.5rem;
+      font-size: 0.9rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background-color: var(--panel-bg);
+      color: var(--fg);
+    }
+    button {
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: var(--hover);
+    }
+    #container {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+    #sidebar {
+      width: 300px;
+      min-width: 250px;
+      max-width: 400px;
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      background-color: var(--panel-bg);
+    }
+    #main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #samples-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    #samples-table th, #samples-table td {
+      padding: 0.3rem 0.5rem;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    #samples-table th {
+      position: sticky;
+      top: 0;
+      background-color: var(--panel-bg);
+      z-index: 1;
+    }
+    #samples-table tr:hover {
+      background-color: var(--hover);
+    }
+    .warning {
+      background-color: var(--warning-bg);
+      color: var(--warning-fg);
+      padding: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+    }
+    .tabs button {
+      flex: 1;
+      padding: 0.5rem;
+      border: none;
+      border-bottom: 2px solid transparent;
+      background-color: var(--panel-bg);
+      color: var(--fg);
+    }
+    .tabs button.active {
+      border-bottom-color: var(--accent);
+      font-weight: bold;
+    }
+    .tab-content {
+      flex: 1;
+      overflow: auto;
+      padding: 1rem;
+    }
+    svg.chart {
+      width: 100%;
+      /* Increase the default chart height to allow more vertical space for
+         scales, CIELAB and spectrum plots. A larger height helps the
+         CIELAB circle and L* ruler appear less cramped.  We allocate
+         extra room here (500px) so that the 125% zoom still leaves
+         charts feeling generous on typical screens. */
+      height: 500px;
+      display: block;
+    }
+
+    /* When the container has the hide-main class, hide the right hand
+       panel (charts) and allow the sidebar to expand to the full width. */
+    #container.hide-main #main {
+      display: none;
+    }
+    #container.hide-main #sidebar {
+      width: auto;
+      max-width: none;
+      flex: 1;
+    }
+    .details-card {
+      background-color: var(--panel-bg);
+      border: 1px solid var(--border);
+      padding: 1rem;
+      border-radius: 4px;
+      margin-top: 1rem;
+    }
+    .details-card table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 0.5rem;
+    }
+    .details-card th, .details-card td {
+      padding: 0.2rem 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .tooltip {
+      position: fixed;
+      pointer-events: none;
+      padding: 0.3rem 0.5rem;
+      background-color: var(--panel-bg);
+      color: var(--fg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      font-size: 0.8rem;
+      z-index: 1000;
+      white-space: nowrap;
+    }
+    #paste-area {
+      width: 100%;
+      height: 100px;
+      font-family: monospace;
+      margin-top: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Colorimetry Explorer</h1>
+    <div class="toolbar">
+      <div class="upload-zone" id="uploadZone">Drop or select CSV…<input type="file" id="fileInput" multiple accept=".csv" /></div>
+      <label>Illuminant:<select id="illuminantFilter"><option value="">All</option></select></label>
+      <label>Group by Illuminant:<input type="checkbox" id="groupByIlluminant" /></label>
+      <input type="search" id="searchBox" placeholder="Search Name or No." />
+      <button id="exportPng">Export Charts (PNG)</button>
+      <button id="exportCsv">Export Filtered CSV</button>
+      <!-- Dark mode toggle button. Clicking this button toggles a .dark class on the root element
+           and persists the choice in localStorage. -->
+      <button id="themeToggle" title="Toggle dark mode" style="margin-left:auto">🌓</button>
+      <!-- Toggle display of labels.  When enabled, all marker labels (sample names
+           and values) are shown persistently rather than only on hover or export.
+           The button updates its title to reflect the next action. -->
+      <button id="labelsToggle" title="Show labels">🔖</button>
+      <!-- Toggle visibility of the chart panel. When clicked, this button collapses the
+           main panel containing the charts so that the sample sidebar fills the available space.
+           Clicking again restores the charts. The button label updates to indicate the
+           current state. -->
+      <button id="toggleMainPanel" title="Hide charts">⇄</button>
+    </div>
+  </header>
+  <div id="container">
+    <aside id="sidebar">
+      <div class="warning" id="warning" style="display:none"></div>
+      <table id="samples-table" aria-label="Samples">
+        <thead>
+          <tr>
+            <th><input type="checkbox" id="selectAll" title="Select All/None" /></th>
+            <th>No.</th>
+            <th>Name</th>
+            <th>Date</th>
+            <th>Time</th>
+            <th>Avg.</th>
+            <th>Illum.</th>
+            <th>L*</th>
+            <th>a*</th>
+            <th>b*</th>
+            <th>Hazen</th>
+            <th>Gardner</th>
+            <th>Saybolt</th>
+            <th>ASTM</th>
+            <th>Pt-Co</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div style="padding:0.5rem">
+        <label>Color by:
+          <select id="colorBy">
+            <option value="sample">Sample</option>
+            <option value="illuminant">Illuminant</option>
+            <option value="average">Average</option>
+          </select>
+        </label>
+        <!-- Button to delete any currently selected samples from the program. -->
+        <div style="margin-top:0.5rem">
+          <button id="deleteSamples" title="Remove selected samples from the list">Delete Selected</button>
+        </div>
+      </div>
+    </aside>
+    <main id="main">
+      <div class="tabs">
+        <button class="active" data-tab="scales">Scales</button>
+        <button data-tab="cielab">CIELAB</button>
+        <button data-tab="spectrum">Spectrum</button>
+        <button data-tab="details">Details</button>
+      </div>
+      <div class="tab-content" id="tab-scales" style="display:block">
+        <svg class="chart" id="scalesChart" aria-label="Scales chart"></svg>
+      </div>
+      <div class="tab-content" id="tab-cielab" style="display:none">
+        <div style="display:flex;flex-wrap:wrap;gap:1rem">
+          <!-- Allocate more space to the a*–b* plane by giving it a larger flex value. -->
+          <svg class="chart" id="abChart" style="flex:3" aria-label="a-b* plane"></svg>
+          <!-- The L* scale occupies less horizontal space compared to the a*b* plane. -->
+          <svg class="chart" id="lChart" style="flex:1" aria-label="L* scale"></svg>
+        </div>
+      </div>
+      <div class="tab-content" id="tab-spectrum" style="display:none">
+        <div style="margin-bottom:0.5rem">
+          <label><input type="checkbox" id="logScale"> log10(A)</label>
+          <label style="margin-left:1rem"><input type="checkbox" id="smoothToggle"> Smooth</label>
+          <label style="margin-left:0.5rem">Window:<input type="range" id="smoothWindow" min="3" max="15" step="2" value="5" style="width:100px" /></label>
+          <label style="margin-left:1rem"><input type="checkbox" id="shadeArea"> Shade area</label>
+        </div>
+        <svg class="chart" id="spectrumChart" aria-label="Spectrum chart"></svg>
+      </div>
+      <div class="tab-content" id="tab-details" style="display:none">
+        <div id="detailsCard" class="details-card">No sample selected.</div>
+      </div>
+    </main>
+  </div>
+  <details style="padding:1rem;border-top:1px solid var(--border)">
+    <summary>Paste CSV for testing</summary>
+    <textarea id="paste-area">No.,Name,Date,Time,Average,Illuminant,Attachment,L*,a*,b*,Hazen(APHA),Gardner,Saybolt,ASTM,Pt-Co,400nm(A),410nm(A),420nm(A),430nm(A),440nm(A),450nm(A),460nm(A),470nm(A),480nm(A),490nm(A),500nm(A),510nm(A),520nm(A),530nm(A),540nm(A),550nm(A),560nm(A),570nm(A),580nm(A),590nm(A),600nm(A),610nm(A),620nm(A),630nm(A),640nm(A),650nm(A),660nm(A),670nm(A),680nm(A),690nm(A),700nm(A)
+M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92,  38.78,    290,    6.0,    5.0,    0.8,    238,  1.583,  1.206,  0.847,  0.598,  0.491,  0.419,  0.354,  0.295,  0.248,  0.212,  0.182,  0.156,  0.133,  0.115,  0.100,  0.087,  0.075,  0.065,  0.056,  0.048,  0.040,  0.035,  0.030,  0.026,  0.023,  0.018,  0.014,  0.010,  0.007,  0.004,  0.000</textarea>
+    <div style="margin-top:0.5rem">
+      <button id="loadPaste">Load Pasted CSV</button>
+      <button id="generateFake">Generate Fake Samples</button>
+    </div>
+  </details>
+  <div id="tooltip" class="tooltip" style="display:none"></div>
+  <script>
+  (function() {
+    // State management
+    const state = {
+      // parsed samples are kept entirely in memory and never persisted
+      samples: [],
+      // currently selected sample ids for overlay
+      selected: new Set(),
+      // UI toggles – these may be persisted
+      colorBy: 'sample',
+      activeTab: 'scales',
+      logScale: false,
+      smooth: false,
+      smoothWindow: 5,
+      shadeArea: false,
+      groupByIlluminant: false,
+      // per‑session filters and search text (not persisted)
+      illuminantFilter: '',
+      search: '',
+      lastClicked: null,
+      // explicit theme string: 'light' or 'dark'
+      theme: 'light',
+      // show labels persistently when true
+      showLabels: false,
+    };
+    // Attempt to load persisted UI state
+    try {
+      const stored = JSON.parse(localStorage.getItem('colorimetryState') || '{}');
+      // Only assign known persisted keys to avoid clobbering arrays/sets
+      ['colorBy','activeTab','logScale','smooth','smoothWindow','shadeArea','groupByIlluminant','theme','showLabels'].forEach(key => {
+        if (stored.hasOwnProperty(key)) state[key] = stored[key];
+      });
+    } catch (e) {
+      // ignore invalid stored state
+    }
+    // Save state
+    function persistState() {
+      // Only persist UI toggles as requested; samples, selections, search, filters
+      // are intentionally not stored across sessions for reliability.
+      const toStore = {
+        colorBy: state.colorBy,
+        activeTab: state.activeTab,
+        logScale: state.logScale,
+        smooth: state.smooth,
+        smoothWindow: state.smoothWindow,
+        shadeArea: state.shadeArea,
+        groupByIlluminant: state.groupByIlluminant,
+        theme: state.theme,
+        showLabels: state.showLabels,
+      };
+      try {
+        localStorage.setItem('colorimetryState', JSON.stringify(toStore));
+      } catch (err) {
+        // ignore storage errors (e.g. quota exceeded)
+      }
+    }
+    // Utility functions
+    function sanitizeNumber(str, decimalSeparator) {
+      if (!str) return NaN;
+      let s = str.trim();
+      // treat placeholder dashes (including em dash) as missing
+      if (/^[\-\u2014]+$/.test(s)) return NaN;
+      // unify thousands grouping by removing spaces
+      s = s.replace(/\s/g,'');
+      // replace decimal separator with dot
+      if (decimalSeparator === ',') {
+        s = s.replace(',', '.');
+      }
+      const n = parseFloat(s);
+      return isNaN(n) ? NaN : n;
+    }
+    function hashColor(key) {
+      // Generate HSL color based on string hash for deterministic palette
+      let hash = 0;
+      for (let i = 0; i < key.length; i++) {
+        hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
+      }
+      const hue = Math.abs(hash) % 360;
+      const sat = 60 + (Math.abs(hash) % 20);
+      const light = 40 + (Math.abs(hash) % 20);
+      return `hsl(${hue},${sat}%,${light}%)`;
+    }
+    function download(filename, text) {
+      const blob = new Blob([text], {type:'text/plain'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 0);
+    }
+    function exportSVGToPNG(svgElement, filename) {
+      // Clone the SVG element to inject namespace declarations required for
+      // proper export. Without xmlns and xmlns:xlink, external resources
+      // such as gradients and clipPaths may not render in the resulting
+      // image. We then serialise the clone instead of the original.
+      const clone = svgElement.cloneNode(true);
+      if (!clone.getAttribute('xmlns')) {
+        clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      }
+      if (!clone.getAttribute('xmlns:xlink')) {
+        clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
+      }
+      const svgData = new XMLSerializer().serializeToString(clone);
+      const canvas = document.createElement('canvas');
+      const bbox = svgElement.getBoundingClientRect();
+      canvas.width = bbox.width;
+      canvas.height = bbox.height;
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      img.onload = function() {
+        ctx.drawImage(img, 0, 0);
+        canvas.toBlob(function(blob) {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          }, 0);
+        });
+      };
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgData);
+    }
+    function savitzkyGolay(y, windowSize) {
+      // Very simple Savitzky-Golay smoothing (no derivative). Assumes windowSize is odd.
+      const half = Math.floor(windowSize/2);
+      const coeff = [];
+      // For smoothing (polynomial order 2) we precompute coefficients for efficiency.
+      // Using symmetric coefficients: central point weight high, outer low.
+      for (let i=-half;i<=half;i++) {
+        const w = (half+1-Math.abs(i));
+        coeff.push(w);
+      }
+      const sumCoeff = coeff.reduce((a,b)=>a+b,0);
+      const smoothed = [];
+      for (let i=0;i<y.length;i++) {
+        let acc = 0;
+        let wsum = 0;
+        for (let j=-half;j<=half;j++) {
+          const idx = i+j;
+          if (idx>=0 && idx<y.length && isFinite(y[idx])) {
+            const w = coeff[j+half];
+            acc += y[idx]*w;
+            wsum += w;
+          }
+        }
+        smoothed.push(acc / wsum);
+      }
+      return smoothed;
+    }
+
+    // ================================
+    // Color conversions
+    // Convert CIELAB values to XYZ using the D65 white point (no chromatic adaptation)
+    function labToXYZ(lab) {
+      // input: {L,a,b}
+      const {L,a,b} = lab;
+      let y = (L + 16) / 116;
+      let x = y + a / 500;
+      let z = y - b / 200;
+      // helper to convert from f to linear component
+      const pivot = v => {
+        const v3 = v * v * v;
+        return v3 > 0.008856 ? v3 : (v - 16/116)/7.787;
+      };
+      x = pivot(x);
+      y = pivot(y);
+      z = pivot(z);
+      // D65 reference white
+      const X = x * 95.047;
+      const Y = y * 100.000;
+      const Z = z * 108.883;
+      return [X,Y,Z];
+    }
+    // Convert XYZ to linear sRGB then to gamma‑corrected sRGB
+    function xyzToSRGB(xyz) {
+      let [X,Y,Z] = xyz;
+      // normalize
+      X /= 100;
+      Y /= 100;
+      Z /= 100;
+      // linear RGB
+      let r = 3.2406*X + (-1.5372)*Y + (-0.4986)*Z;
+      let g = (-0.9689)*X + 1.8758*Y + 0.0415*Z;
+      let b = 0.0557*X + (-0.2040)*Y + 1.0570*Z;
+      // clamp linear values to 0–1 range for out‑of‑gamut soft clipping
+      r = Math.min(Math.max(r, 0), 1);
+      g = Math.min(Math.max(g, 0), 1);
+      b = Math.min(Math.max(b, 0), 1);
+      const convert = c => c <= 0.0031308 ? 12.92*c : 1.055*Math.pow(c,1/2.4) - 0.055;
+      return [convert(r), convert(g), convert(b)];
+    }
+    // Convert Lab directly to sRGB array (0–1)
+    function labToSRGB(lab) {
+      const xyz = labToXYZ(lab);
+      return xyzToSRGB(xyz);
+    }
+    // Convert sRGB array to CSS hex string
+    function srgbToHex(rgb) {
+      const toHex = v => {
+        const h = Math.round(v*255);
+        return h.toString(16).padStart(2,'0');
+      };
+      const [r,g,b] = rgb;
+      return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+    }
+    // Approximate mapping from wavelength (nm) to sRGB. Only defined for 400–700 nm.
+    function wavelengthToSRGB(nm) {
+      let r=0, g=0, b=0;
+      if (nm >= 380 && nm < 440) {
+        r = -(nm - 440) / (440 - 380);
+        g = 0.0;
+        b = 1.0;
+      } else if (nm >= 440 && nm < 490) {
+        r = 0.0;
+        g = (nm - 440) / (490 - 440);
+        b = 1.0;
+      } else if (nm >= 490 && nm < 510) {
+        r = 0.0;
+        g = 1.0;
+        b = -(nm - 510) / (510 - 490);
+      } else if (nm >= 510 && nm < 580) {
+        r = (nm - 510) / (580 - 510);
+        g = 1.0;
+        b = 0.0;
+      } else if (nm >= 580 && nm < 645) {
+        r = 1.0;
+        g = -(nm - 645) / (645 - 580);
+        b = 0.0;
+      } else if (nm >= 645 && nm <= 780) {
+        r = 1.0;
+        g = 0.0;
+        b = 0.0;
+      }
+      // intensity factor (fade near edges)
+      let factor;
+      if (nm >= 380 && nm < 420) {
+        factor = 0.3 + 0.7 * (nm - 380) / (420 - 380);
+      } else if (nm >= 420 && nm < 645) {
+        factor = 1.0;
+      } else if (nm >= 645 && nm <= 780) {
+        factor = 0.3 + 0.7 * (780 - nm) / (780 - 645);
+      } else {
+        factor = 0.0;
+      }
+      const gamma = 0.8;
+      const conv = c => Math.pow(c * factor, gamma);
+      return [conv(r), conv(g), conv(b)];
+    }
+
+    // ------------------------------------------------------------------
+    // Colour gradient definitions for the scales
+    // Each entry defines a list of stops for a particular scale. The
+    // `value` field corresponds to the scale reading and `color` is the
+    // approximate colour for that position on the scale. These gradients
+    // are used to render a continuous colour bar behind the axis, even
+    // when no samples are loaded. Colours have been hand‑picked to
+    // approximate commonly used scale charts: light values near 0 and
+    // progressively darker, more saturated tones towards the upper end.
+    const scaleGradientStops = {
+      // ASTM D1500 colour scale approximated from reference chart.  Values
+      // progress from pale yellow through orange and red to near black.
+      // The image provided shows discrete steps at half‑unit increments; we
+      // interpolate between a broader set of anchor points to give a smooth
+      // gradient. See user‑supplied chart for target colours.
+      'ASTMd1500': [
+        { value: 0,   color: '#fff9c4' }, // very pale yellow
+        { value: 1,   color: '#ffe173' }, // light golden
+        { value: 2,   color: '#ffb100' }, // orange
+        { value: 3,   color: '#ff7f24' }, // red‑orange
+        { value: 4,   color: '#c02928' }, // deep red
+        { value: 5,   color: '#7a0d1d' }, // dark maroon
+        { value: 6,   color: '#36050b' }, // almost black
+        { value: 8,   color: '#000000' }, // black
+      ],
+      // Saybolt colour scale is essentially a very pale yellow that
+      // becomes even lighter towards higher positive values.  The values
+      // below are sampled from the provided illustration.  The left end
+      // (value +30) is nearly white; the right end (value −16) is a
+      // slightly more saturated yellow.
+      'Saybolt': [
+        { value: -16, color: '#fdf5c0' }, // pale yellow at low values
+        { value: 0,   color: '#fffbe8' }, // almost colourless
+        { value: 30,  color: '#ffffff' }, // clear/white
+      ],
+      // Pt‑Co (Hazen/APHA) scale runs from clear through light ivory to pale
+      // yellow.  These stops are chosen to approximate the reference image.
+      'Pt-Co (Hazen)': [
+        { value: 0,   color: '#ffffff' }, // clear water
+        { value: 250, color: '#fff7d5' }, // light ivory/yellow
+        { value: 500, color: '#f7e48b' }, // pale yellow
+      ],
+    };
+    // CSV parser
+    function parseCSV(text) {
+      const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+      if (lines.length === 0) return {samples: [], warnings: []};
+      const headerLine = lines[0];
+      // Determine separator: comma or semicolon by counting
+      const countComma = (headerLine.match(/,/g) || []).length;
+      const countSemi  = (headerLine.match(/;/g) || []).length;
+      const sep = countSemi > countComma ? ';' : ',';
+      const header = headerLine.split(sep).map(h => h.trim());
+      const samples = [];
+      const warnings = [];
+      for (let i=1; i<lines.length; i++) {
+        const row = lines[i];
+        if (!row || /^\s*$/.test(row)) continue;
+        // Skip duplicate header lines if the first three columns match 'No.', 'Name', 'Date'
+        const maybeHeader = row.split(sep);
+        if (maybeHeader.length >= 3) {
+          const h0 = maybeHeader[0].trim();
+          const h1 = maybeHeader[1].trim();
+          const h2 = maybeHeader[2].trim();
+          if (h0 === 'No.' && h1 === 'Name' && h2 === 'Date') {
+            continue;
+          }
+        }
+        // Determine decimal separator for this line: if values have commas not due to separator
+        // heuristically check numeric fields
+        let decSep = '.';
+        // check if there is a comma in number section (not as field separator)
+        const numericParts = row.split(sep).slice(7);
+        for (const part of numericParts) {
+          if (part && part.trim().match(/\d,\d/)) { decSep = ','; break; }
+        }
+        const cols = row.split(sep);
+        if (cols.length < header.length) {
+          warnings.push(`Line ${i+1}: expected ${header.length} columns, got ${cols.length}`);
+        }
+        const obj = {};
+        for (let j=0; j<header.length; j++) {
+          const key = header[j];
+          const val = cols[j] || '';
+          if (/^\d{3}nm\(A\)$/i.test(key)) {
+            // Spectral columns will be added after loop
+            continue;
+          }
+          if (['L*','a*','b*','Hazen(APHA)','Gardner','Saybolt','ASTM','Pt-Co'].includes(key)) {
+            obj[key] = sanitizeNumber(val, decSep);
+          } else {
+            obj[key] = val.trim();
+          }
+        }
+        // Add spectrum: key-value pairs of wavelength to absorbance
+        const spectrum = [];
+        header.forEach((h, idx) => {
+          const match = h.match(/^(\d{3})nm\(A\)$/);
+          if (match) {
+            const nm = parseInt(match[1]);
+            const v = cols[idx];
+            spectrum.push({
+              wavelength: nm,
+              absorbance: sanitizeNumber(v, decSep)
+            });
+          }
+        });
+        spectrum.sort((a,b) => a.wavelength - b.wavelength);
+        obj.spectrum = spectrum;
+        // Precompute derived values
+        obj.Cstar = isFinite(obj['a*']) && isFinite(obj['b*']) ? Math.hypot(obj['a*'], obj['b*']) : NaN;
+        obj.hueDeg = isFinite(obj['a*']) && isFinite(obj['b*']) ? ((Math.atan2(obj['b*'], obj['a*'])*180/Math.PI+360)%360) : NaN;
+        // Compute sRGB and hex colour from Lab values if valid
+        if (isFinite(obj['L*']) && isFinite(obj['a*']) && isFinite(obj['b*'])) {
+          const rgb = labToSRGB({L: obj['L*'], a: obj['a*'], b: obj['b*']});
+          obj.srgb = rgb;
+          obj.hex = srgbToHex(rgb);
+        } else {
+          obj.srgb = null;
+          obj.hex = null;
+        }
+        // Create unique id for sample to avoid collisions
+        obj.id = `${obj['No.']}||${obj['Name']}`;
+        samples.push(obj);
+      }
+      return {samples, warnings};
+    }
+    // Render functions
+    function updateIlluminantOptions() {
+      const select = document.getElementById('illuminantFilter');
+      const unique = new Set(state.samples.map(s => s.Illuminant).filter(Boolean));
+      const prev = state.illuminantFilter;
+      select.innerHTML = '<option value="">All</option>';
+      unique.forEach(val => {
+        const opt = document.createElement('option');
+        opt.value = val;
+        opt.textContent = val;
+        if (val === prev) opt.selected = true;
+        select.appendChild(opt);
+      });
+    }
+    function filteredSamples() {
+      return state.samples.filter(s => {
+        if (state.illuminantFilter && s.Illuminant !== state.illuminantFilter) return false;
+        const search = state.search.toLowerCase();
+        if (search) {
+          const target = `${s['No.']} ${s.Name}`.toLowerCase();
+          if (!target.includes(search)) return false;
+        }
+        return true;
+      });
+    }
+    function updateTable() {
+      const tbody = document.querySelector('#samples-table tbody');
+      tbody.innerHTML = '';
+      const rows = filteredSamples();
+      rows.forEach(sample => {
+        const tr = document.createElement('tr');
+        // checkbox
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = state.selected.has(sample.id);
+        cb.addEventListener('change', () => {
+          if (cb.checked) state.selected.add(sample.id);
+          else state.selected.delete(sample.id);
+          persistState();
+          // schedule a redraw to ensure charts update after layout
+          scheduleDraw();
+        });
+        const tdCb = document.createElement('td');
+        tdCb.appendChild(cb);
+        tr.appendChild(tdCb);
+        [ 'No.', 'Name', 'Date', 'Time', 'Average', 'Illuminant', 'L*', 'a*', 'b*', 'Hazen(APHA)', 'Gardner', 'Saybolt', 'ASTM', 'Pt-Co' ].forEach(key => {
+          const td = document.createElement('td');
+          const val = sample[key];
+          // Make the Name field editable so users can rename samples. When
+          // edited, update the sample object’s name and id accordingly. If
+          // the sample was selected or last clicked, update those ids as well.
+          if (key === 'Name') {
+            const span = document.createElement('span');
+            span.contentEditable = true;
+            span.textContent = val;
+            span.addEventListener('keydown', e => {
+              // Commit changes on Enter; prevent newline insertion
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                span.blur();
+              }
+            });
+            span.addEventListener('blur', e => {
+              const newName = span.textContent.trim();
+              if (newName && newName !== sample['Name']) {
+                const oldId = sample.id;
+                sample['Name'] = newName;
+                sample.id = `${sample['No.']}||${newName}`;
+                // Update selected set if necessary
+                if (state.selected.has(oldId)) {
+                  state.selected.delete(oldId);
+                  state.selected.add(sample.id);
+                }
+                // Update last clicked id
+                if (state.lastClicked === oldId) {
+                  state.lastClicked = sample.id;
+                }
+                // Re-render table and charts to reflect new name
+                updateTable();
+                scheduleDraw();
+                drawDetails();
+              }
+            });
+            td.appendChild(span);
+          } else {
+            let text = '';
+            if (key === 'L*' || key === 'a*' || key === 'b*') text = isFinite(val) ? val.toFixed(2) : '';
+            else if (['Hazen(APHA)','Gardner','Saybolt','ASTM','Pt-Co'].includes(key)) text = isFinite(val) ? val.toFixed(1) : '';
+            else text = val;
+            td.textContent = text;
+          }
+          tr.appendChild(td);
+        });
+        tr.addEventListener('click', (ev) => {
+          // If clicking on checkbox skip
+          if (ev.target.tagName.toLowerCase() === 'input') return;
+          state.lastClicked = sample.id;
+          drawDetails();
+        });
+        tbody.appendChild(tr);
+      });
+      // Update selectAll state
+      const selectAllCb = document.getElementById('selectAll');
+      const allShownIds = rows.map(s => s.id);
+      const allSelected = allShownIds.length > 0 && allShownIds.every(id => state.selected.has(id));
+      selectAllCb.checked = allSelected;
+    }
+    function updateWarning(warnings) {
+      const warnDiv = document.getElementById('warning');
+      if (warnings && warnings.length) {
+        warnDiv.textContent = warnings.join('; ');
+        warnDiv.style.display = 'block';
+      } else {
+        warnDiv.style.display = 'none';
+      }
+    }
+    // Chart drawing helpers
+    function clearSVG(svg) {
+      while (svg.firstChild) svg.removeChild(svg.firstChild);
+    }
+    function createSVG(width, height) {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+      svg.setAttribute('width', width);
+      svg.setAttribute('height', height);
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      return svg;
+    }
+    function drawScales() {
+      const svg = document.getElementById('scalesChart');
+      clearSVG(svg);
+      const width = svg.clientWidth;
+      const height = svg.clientHeight;
+      const padding = {top:20,right:40,bottom:30,left:40};
+      const chartHeight = (height - padding.top - padding.bottom) / 3;
+      // Set up a defs container for gradients
+      const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+      svg.appendChild(defs);
+      const scales = [
+        // ASTM D1500 scale ranges from 0 to 8. Gardner is no longer used.
+        {name:'ASTMd1500', min:0, max:8, step:1, valKey:'ASTM'},
+        {name:'Saybolt', min:-16, max:30, step:2, valKey:'Saybolt'},
+        {name:'Pt-Co (Hazen)', min:0, max:500, step:50, valKey:'Pt-Co'},
+      ];
+      scales.forEach((sc, idx) => {
+        const y0 = padding.top + idx*chartHeight;
+        // Define a gradient for the current scale using our precomputed stops
+        const gradId = `scaleGrad_${idx}`;
+        const gradient = document.createElementNS('http://www.w3.org/2000/svg','linearGradient');
+        gradient.setAttribute('id', gradId);
+        gradient.setAttribute('x1','0%');
+        gradient.setAttribute('y1','0%');
+        gradient.setAttribute('x2','100%');
+        gradient.setAttribute('y2','0%');
+        const stops = scaleGradientStops[sc.name] || [];
+        stops.forEach(stop => {
+          // normalise the stop position relative to the scale range
+          const off = (stop.value - sc.min) / (sc.max - sc.min);
+          const pos = Math.max(0, Math.min(1, off));
+          const stopEl = document.createElementNS('http://www.w3.org/2000/svg','stop');
+          stopEl.setAttribute('offset', (pos*100) + '%');
+          stopEl.setAttribute('stop-color', stop.color);
+          gradient.appendChild(stopEl);
+        });
+        defs.appendChild(gradient);
+        // Draw the colour bar behind the axis line.  Increase thickness
+        // relative to the original design to better fill the available
+        // vertical space at 125% zoom.  A 30px height gives clear
+        // delineation of the gradient without overwhelming the axis.
+        const barHeight = 30;
+        const barY = y0 + chartHeight/2 - barHeight/2;
+        const bar = document.createElementNS('http://www.w3.org/2000/svg','rect');
+        bar.setAttribute('x', padding.left);
+        bar.setAttribute('y', barY);
+        bar.setAttribute('width', width - padding.left - padding.right);
+        bar.setAttribute('height', barHeight);
+        bar.setAttribute('fill', `url(#${gradId})`);
+        svg.appendChild(bar);
+        // axis line
+        const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+        line.setAttribute('x1', padding.left);
+        line.setAttribute('x2', width - padding.right);
+        line.setAttribute('y1', y0 + chartHeight/2);
+        line.setAttribute('y2', y0 + chartHeight/2);
+        line.setAttribute('stroke', 'currentColor');
+        svg.appendChild(line);
+        // ticks
+        for (let v=sc.min; v<=sc.max; v+=sc.step) {
+          const x = padding.left + (v - sc.min)/(sc.max - sc.min) * (width - padding.left - padding.right);
+          const tick = document.createElementNS('http://www.w3.org/2000/svg','line');
+          tick.setAttribute('x1', x);
+          tick.setAttribute('x2', x);
+          tick.setAttribute('y1', y0 + chartHeight/2 - 4);
+          tick.setAttribute('y2', y0 + chartHeight/2 + 4);
+          tick.setAttribute('stroke', 'currentColor');
+          svg.appendChild(tick);
+          const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+          lbl.setAttribute('x', x);
+          lbl.setAttribute('y', y0 + chartHeight/2 + 15);
+          lbl.setAttribute('text-anchor', 'middle');
+          lbl.setAttribute('font-size', '10');
+          lbl.textContent = v;
+          svg.appendChild(lbl);
+        }
+        // title
+        const title = document.createElementNS('http://www.w3.org/2000/svg','text');
+        title.setAttribute('x', padding.left);
+        title.setAttribute('y', y0 + 12);
+        title.setAttribute('font-size','11');
+        title.setAttribute('font-weight','bold');
+        title.textContent = sc.name;
+        svg.appendChild(title);
+        // markers for selected samples. We compute a list of all currently
+        // selected and visible samples once and use it to assign label
+        // offsets. This helps to minimise overlapping label text when
+        // persistent labels are enabled. The same ordering is used
+        // across all scales so that offsets remain consistent.
+        const selectedList = filteredSamples().filter(s => state.selected.has(s.id));
+        selectedList.forEach(sample => {
+          const val = sample[sc.valKey];
+          const altVal = sc.altKey ? sample[sc.altKey] : undefined;
+          if (!isFinite(val) && !isFinite(altVal)) return;
+          const usedVal = isFinite(val) ? val : altVal;
+          // project the value onto the bar
+          const x = padding.left + (usedVal - sc.min)/(sc.max - sc.min) * (width - padding.left - padding.right);
+          const y = y0 + chartHeight/2;
+          const size = 6;
+          // triangle marker using palette colour
+          const tri = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+          tri.setAttribute('points', `${x},${y-size} ${x-size},${y+size} ${x+size},${y+size}`);
+          tri.setAttribute('fill', getSampleColor(sample));
+          // colour chip (rounded square) using actual Lab colour if available
+          if (sample.hex) {
+            const chipSize = 8;
+            const chip = document.createElementNS('http://www.w3.org/2000/svg','rect');
+            chip.setAttribute('x', x + size + 2);
+            chip.setAttribute('y', y - chipSize/2);
+            chip.setAttribute('width', chipSize);
+            chip.setAttribute('height', chipSize);
+            chip.setAttribute('rx', 2);
+            chip.setAttribute('ry', 2);
+            chip.setAttribute('fill', sample.hex);
+            chip.setAttribute('stroke', 'var(--border)');
+            chip.setAttribute('stroke-width', '0.5');
+            chip.addEventListener('mousemove', evt => {
+              const tooltipLines = [];
+              tooltipLines.push(sample['Name']);
+              tooltipLines.push(`${sc.name}: ${isFinite(usedVal) ? usedVal.toFixed(1) : ''}`);
+              tooltipLines.push(`${sample['Date']} ${sample['Time']}`);
+              if (isFinite(sample['L*']) && isFinite(sample['a*']) && isFinite(sample['b*'])) {
+                tooltipLines.push(`L*: ${sample['L*'].toFixed(2)}  a*: ${sample['a*'].toFixed(2)}  b*: ${sample['b*'].toFixed(2)}`);
+              }
+              showTooltip(evt.clientX, evt.clientY, tooltipLines.join('\n'));
+            });
+            chip.addEventListener('mouseleave', hideTooltip);
+            svg.appendChild(chip);
+          }
+          tri.addEventListener('mousemove', evt => {
+            const tooltipLines = [];
+            tooltipLines.push(sample['Name']);
+            tooltipLines.push(`${sc.name}: ${isFinite(usedVal) ? usedVal.toFixed(1) : ''}`);
+            tooltipLines.push(`${sample['Date']} ${sample['Time']}`);
+            if (isFinite(sample['L*']) && isFinite(sample['a*']) && isFinite(sample['b*'])) {
+              tooltipLines.push(`L*: ${sample['L*'].toFixed(2)}  a*: ${sample['a*'].toFixed(2)}  b*: ${sample['b*'].toFixed(2)}`);
+            }
+            showTooltip(evt.clientX, evt.clientY, tooltipLines.join('\n'));
+          });
+          tri.addEventListener('mouseleave', hideTooltip);
+          svg.appendChild(tri);
+          // Label for the sample.  When labels are enabled or exporting,
+          // this text becomes visible.  Include the numeric value in
+          // parentheses to make the scale reading explicit.  Offset
+          // vertically according to the sample’s position in the list to
+          // reduce overlap.
+          const label = document.createElementNS('http://www.w3.org/2000/svg','text');
+          const labelX = x + size + (sample.hex ? 8 : 0) + 6;
+          const idx = selectedList.findIndex(s => s.id === sample.id);
+          const labelY = y + 4 + idx * 12;
+          label.setAttribute('x', labelX);
+          label.setAttribute('y', labelY);
+          label.setAttribute('class','label-export');
+          label.textContent = `${sample['Name']} (${isFinite(usedVal) ? usedVal.toFixed(1) : ''})`;
+          svg.appendChild(label);
+        });
+      });
+    }
+    function drawAB() {
+      const svg = document.getElementById('abChart');
+      clearSVG(svg);
+      const width = svg.clientWidth;
+      const height = svg.clientHeight;
+      const padding = 40;
+      const originX = width/2;
+      const originY = height/2;
+      const maxRadius = Math.min(width, height)/2 - padding;
+      // The AB plane now covers values from -140 to +140 instead of ±100.
+      const AB_RANGE = 140;
+      // Clip path for circular region
+      const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+      const clip = document.createElementNS('http://www.w3.org/2000/svg','clipPath');
+      const clipId = 'abClip';
+      clip.setAttribute('id', clipId);
+      // Specify clipPathUnits to ensure correct dimensions when exporting. Without
+      // this attribute the clipping may fail in the exported PNG.
+      clip.setAttribute('clipPathUnits','userSpaceOnUse');
+      const clipCircle = document.createElementNS('http://www.w3.org/2000/svg','circle');
+      clipCircle.setAttribute('cx', originX);
+      clipCircle.setAttribute('cy', originY);
+      clipCircle.setAttribute('r', maxRadius);
+      clip.appendChild(clipCircle);
+      defs.appendChild(clip);
+      svg.appendChild(defs);
+      // Group for all elements that should be clipped to the circle
+      const plotGroup = document.createElementNS('http://www.w3.org/2000/svg','g');
+      plotGroup.setAttribute('clip-path', `url(#${clipId})`);
+      svg.appendChild(plotGroup);
+      // Draw a colour map within the circle representing mixtures of a* and b*.
+      // We sample a regular grid in Lab space (L fixed at 60) and convert
+      // each point to sRGB. Points outside the unit circle (|C*|>100) are
+      // left transparent. The resulting image is clipped by the circular
+      // path above.
+      (function() {
+        const res = 120; // resolution of the colour map grid
+        const canvas = document.createElement('canvas');
+        canvas.width = res;
+        canvas.height = res;
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.createImageData(res, res);
+        const data = imgData.data;
+        const AB_MAX = 140;
+        for (let j = 0; j < res; j++) {
+          // b* coordinate: +AB_MAX at top, -AB_MAX at bottom
+          const bVal = ((res - 1 - j) / (res - 1) * 2 - 1) * AB_MAX;
+          for (let i = 0; i < res; i++) {
+            // a* coordinate: -AB_MAX at left, +AB_MAX at right
+            const aVal = (i / (res - 1) * 2 - 1) * AB_MAX;
+            const idx = (j * res + i) * 4;
+            // Skip points outside the circle of radius AB_MAX
+            if (Math.hypot(aVal, bVal) > AB_MAX) {
+              data[idx + 3] = 0; // transparent
+              continue;
+            }
+            // Convert Lab to sRGB for a fixed lightness (L* = 60)
+            const rgb = labToSRGB({ L: 60, a: aVal, b: bVal });
+            data[idx] = Math.round(rgb[0] * 255);
+            data[idx + 1] = Math.round(rgb[1] * 255);
+            data[idx + 2] = Math.round(rgb[2] * 255);
+            data[idx + 3] = 255;
+          }
+        }
+        ctx.putImageData(imgData, 0, 0);
+        const url = canvas.toDataURL();
+        const imgEl = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+        imgEl.setAttributeNS('http://www.w3.org/1999/xlink', 'href', url);
+        imgEl.setAttribute('x', 0);
+        imgEl.setAttribute('y', 0);
+        imgEl.setAttribute('width', width);
+        imgEl.setAttribute('height', height);
+        // Prepend the image so it sits beneath rings and points
+        plotGroup.appendChild(imgEl);
+      })();
+      // draw concentric circles for C* (20/40/60/80/100/120/140) scaled to ±140
+      const rings = [20,40,60,80,100,120,140];
+      rings.forEach(rVal => {
+        const circ = document.createElementNS('http://www.w3.org/2000/svg','circle');
+        const rad = (rVal / AB_RANGE) * maxRadius;
+        circ.setAttribute('cx', originX);
+        circ.setAttribute('cy', originY);
+        circ.setAttribute('r', rad);
+        circ.setAttribute('fill','none');
+        circ.setAttribute('stroke','var(--border)');
+        circ.setAttribute('stroke-dasharray','2 2');
+        plotGroup.appendChild(circ);
+        const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+        lbl.setAttribute('x', originX + rad);
+        lbl.setAttribute('y', originY - 4);
+        lbl.setAttribute('font-size','10');
+        lbl.textContent = rVal;
+        plotGroup.appendChild(lbl);
+      });
+      // axes: draw them on the main svg, not inside the clipped group, so
+      // they appear across the full chart.  Without this change the
+      // axes were clipped out of exported images.
+      const axisXLine = document.createElementNS('http://www.w3.org/2000/svg','line');
+      axisXLine.setAttribute('x1', padding);
+      axisXLine.setAttribute('x2', width - padding);
+      axisXLine.setAttribute('y1', originY);
+      axisXLine.setAttribute('y2', originY);
+      axisXLine.setAttribute('stroke','var(--border)');
+      svg.appendChild(axisXLine);
+      const axisYLine = document.createElementNS('http://www.w3.org/2000/svg','line');
+      axisYLine.setAttribute('x1', originX);
+      axisYLine.setAttribute('x2', originX);
+      axisYLine.setAttribute('y1', padding);
+      axisYLine.setAttribute('y2', height - padding);
+      axisYLine.setAttribute('stroke','var(--border)');
+      svg.appendChild(axisYLine);
+      // grid lines every 10 units
+      // grid lines every 20 units across the ±140 range
+      for (let v=-140; v<=140; v+=20) {
+        const x = originX + (v / AB_RANGE) * maxRadius;
+        const y = originY - (v / AB_RANGE) * maxRadius;
+        // vertical grid
+        const vg = document.createElementNS('http://www.w3.org/2000/svg','line');
+        vg.setAttribute('x1', x);
+        vg.setAttribute('x2', x);
+        vg.setAttribute('y1', padding);
+        vg.setAttribute('y2', height - padding);
+        vg.setAttribute('stroke','var(--border)');
+        vg.setAttribute('stroke-dasharray','2 2');
+        plotGroup.appendChild(vg);
+        // horizontal grid
+        const hg = document.createElementNS('http://www.w3.org/2000/svg','line');
+        hg.setAttribute('y1', y);
+        hg.setAttribute('y2', y);
+        hg.setAttribute('x1', padding);
+        hg.setAttribute('x2', width - padding);
+        hg.setAttribute('stroke','var(--border)');
+        hg.setAttribute('stroke-dasharray','2 2');
+        plotGroup.appendChild(hg);
+        // labels for axes (not clipped, attach to main svg)
+        if (v !== 0) {
+          const lblX = document.createElementNS('http://www.w3.org/2000/svg','text');
+          lblX.setAttribute('x', x);
+          lblX.setAttribute('y', originY + 12);
+          lblX.setAttribute('font-size','9');
+          lblX.setAttribute('text-anchor','middle');
+          lblX.textContent = v;
+          svg.appendChild(lblX);
+          const lblY = document.createElementNS('http://www.w3.org/2000/svg','text');
+          lblY.setAttribute('x', originX - 3);
+          lblY.setAttribute('y', y + 3);
+          lblY.setAttribute('font-size','9');
+          lblY.setAttribute('text-anchor','end');
+          lblY.textContent = v;
+          svg.appendChild(lblY);
+        }
+      }
+      // plot samples.  Build a list of selected samples to compute label
+      // offsets.  Each label shows the sample name and L*a*b* values.
+      const selectedAB = filteredSamples().filter(s => state.selected.has(s.id));
+      selectedAB.forEach(sample => {
+        const a = sample['a*'];
+        const b = sample['b*'];
+        if (!isFinite(a) || !isFinite(b)) return;
+        const x = originX + (a / AB_RANGE) * maxRadius;
+        const y = originY - (b / AB_RANGE) * maxRadius;
+        const pt = document.createElementNS('http://www.w3.org/2000/svg','circle');
+        pt.setAttribute('cx', x);
+        pt.setAttribute('cy', y);
+        pt.setAttribute('r', 5);
+        // fill with actual Lab colour if available, fallback to palette
+        if (sample.hex) {
+          pt.setAttribute('fill', sample.hex);
+        } else {
+          pt.setAttribute('fill', getSampleColor(sample));
+        }
+        pt.setAttribute('stroke', 'currentColor');
+        pt.setAttribute('stroke-width', '0.5');
+        pt.addEventListener('mousemove', evt => {
+          const lines = [];
+          lines.push(sample['Name']);
+          if (isFinite(sample['L*']) && isFinite(sample['a*']) && isFinite(sample['b*'])) {
+            lines.push(`L*: ${sample['L*'].toFixed(2)}  a*: ${sample['a*'].toFixed(2)}  b*: ${sample['b*'].toFixed(2)}`);
+          }
+          showTooltip(evt.clientX, evt.clientY, lines.join('\n'));
+        });
+        pt.addEventListener('mouseleave', hideTooltip);
+        plotGroup.appendChild(pt);
+        // Label for the sample.  When labels are enabled or exporting,
+        // this text is visible.  Offset vertically based on the sample
+        // index to reduce overlap, and include L*, a* and b* values.
+        const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+        const idx = selectedAB.findIndex(s => s.id === sample.id);
+        const lblX = x + 6;
+        const lblY = y - 6 - idx * 12;
+        lbl.setAttribute('x', lblX);
+        lbl.setAttribute('y', lblY);
+        lbl.setAttribute('class','label-export');
+        let text = `${sample['Name']}`;
+        if (isFinite(sample['L*']) && isFinite(sample['a*']) && isFinite(sample['b*'])) {
+          text += ` (L*: ${sample['L*'].toFixed(2)}, a*: ${sample['a*'].toFixed(2)}, b*: ${sample['b*'].toFixed(2)})`;
+        }
+        lbl.textContent = text;
+        plotGroup.appendChild(lbl);
+      });
+    }
+    function drawL() {
+      const svg = document.getElementById('lChart');
+      clearSVG(svg);
+      const width = svg.clientWidth;
+      const height = svg.clientHeight;
+      const padding = {top:20,right:20,bottom:20,left:30};
+      // vertical axis spans 0–100. Draw a vertical gradient next to the axis
+      // to visually indicate the progression from light (top) to dark
+      // (bottom). Ticks and labels are drawn on the axis. The axis
+      // markers extend to the right of the gradient.
+      const axisX = padding.left;
+      const y0 = padding.top;
+      const y1 = height - padding.bottom;
+      // Create gradient definition
+      const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+      const gradId = 'lGrad_' + Math.random().toString(36).slice(2);
+      const gradient = document.createElementNS('http://www.w3.org/2000/svg','linearGradient');
+      gradient.setAttribute('id', gradId);
+      gradient.setAttribute('x1','0%');
+      gradient.setAttribute('y1','0%');
+      gradient.setAttribute('x2','0%');
+      gradient.setAttribute('y2','100%');
+      const stopTop = document.createElementNS('http://www.w3.org/2000/svg','stop');
+      stopTop.setAttribute('offset','0%');
+      stopTop.setAttribute('stop-color','#ffffff');
+      gradient.appendChild(stopTop);
+      const stopBottom = document.createElementNS('http://www.w3.org/2000/svg','stop');
+      stopBottom.setAttribute('offset','100%');
+      stopBottom.setAttribute('stop-color','#000000');
+      gradient.appendChild(stopBottom);
+      defs.appendChild(gradient);
+      svg.appendChild(defs);
+      // Draw gradient bar. Position it just to the right of the axis line.
+      const barWidth = 12;
+      const gradRect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      gradRect.setAttribute('x', axisX + 8);
+      gradRect.setAttribute('y', y0);
+      gradRect.setAttribute('width', barWidth);
+      gradRect.setAttribute('height', y1 - y0);
+      gradRect.setAttribute('fill', `url(#${gradId})`);
+      svg.appendChild(gradRect);
+      // axis line
+      const line = document.createElementNS('http://www.w3.org/2000/svg','line');
+      line.setAttribute('x1', axisX);
+      line.setAttribute('x2', axisX);
+      line.setAttribute('y1', y0);
+      line.setAttribute('y2', y1);
+      line.setAttribute('stroke','currentColor');
+      svg.appendChild(line);
+      // ticks and labels every 10 units
+      for (let v=0; v<=100; v+=10) {
+        const y = y1 - (v/100)*(y1 - y0);
+        const tick = document.createElementNS('http://www.w3.org/2000/svg','line');
+        tick.setAttribute('x1', axisX - 4);
+        tick.setAttribute('x2', axisX + 4);
+        tick.setAttribute('y1', y);
+        tick.setAttribute('y2', y);
+        tick.setAttribute('stroke','currentColor');
+        svg.appendChild(tick);
+        const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+        lbl.setAttribute('x', axisX - 6);
+        lbl.setAttribute('y', y + 3);
+        lbl.setAttribute('font-size','9');
+        lbl.setAttribute('text-anchor','end');
+        lbl.textContent = v;
+        svg.appendChild(lbl);
+      }
+      // markers for each selected sample.  Use a list of selected samples
+      // to determine label offsets and avoid overlapping text.  Each
+      // sample’s name and L* value are shown when labels are enabled or
+      // exporting.  Labels are spaced horizontally according to the
+      // sample’s index in the list.
+      const selectedL = filteredSamples().filter(s => state.selected.has(s.id));
+      selectedL.forEach(sample => {
+        const l = sample['L*'];
+        if (!isFinite(l)) return;
+        const yPos = y1 - (l/100)*(y1 - y0);
+        const size = 5;
+        const markerX = axisX + barWidth + 10;
+        const tri = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+        tri.setAttribute('points', `${markerX},${yPos} ${markerX+size},${yPos-size} ${markerX+size},${yPos+size}`);
+        if (sample.hex) {
+          tri.setAttribute('fill', sample.hex);
+        } else {
+          tri.setAttribute('fill', getSampleColor(sample));
+        }
+        tri.setAttribute('stroke','currentColor');
+        tri.setAttribute('stroke-width','0.5');
+        tri.addEventListener('mousemove', evt => {
+          showTooltip(evt.clientX, evt.clientY, `${sample['Name']}\nL*: ${l.toFixed(2)}`);
+        });
+        tri.addEventListener('mouseleave', hideTooltip);
+        svg.appendChild(tri);
+        // label for L* markers.  Offset horizontally by the sample index
+        // so that labels are less likely to overlap.  Include the L*
+        // value in parentheses.
+        const lblExp = document.createElementNS('http://www.w3.org/2000/svg','text');
+        const idx = selectedL.findIndex(s => s.id === sample.id);
+        lblExp.setAttribute('x', markerX + size + 4 + idx * 70);
+        lblExp.setAttribute('y', yPos + 3);
+        lblExp.setAttribute('class','label-export');
+        lblExp.textContent = `${sample['Name']} (${l.toFixed(2)})`;
+        svg.appendChild(lblExp);
+      });
+    }
+    function drawSpectrum() {
+      const svg = document.getElementById('spectrumChart');
+      clearSVG(svg);
+      const width = svg.clientWidth;
+      const height = svg.clientHeight;
+      // Extra bottom space for the wavelength color band and its label
+      const bandHeight = 18;
+      // Increase top padding to prevent curves from touching the top of the viewport
+      const padding = {top:30,right:60,bottom:50 + bandHeight,left:50};
+      const samplesToPlot = filteredSamples().filter(s => state.selected.has(s.id));
+      if (samplesToPlot.length === 0) return;
+      // Determine x range (wavelength)
+      const allWs = samplesToPlot.flatMap(s => s.spectrum.map(p => p.wavelength));
+      const minW = Math.min(...allWs);
+      const maxW = Math.max(...allWs);
+      // Determine y range (absorbance or log)
+      const allYs = [];
+      samplesToPlot.forEach(s => {
+        const values = s.spectrum.map(p => {
+          const y = p.absorbance;
+          if (!isFinite(y)) return NaN;
+          return state.logScale ? Math.log10(y) : y;
+        }).filter(v => isFinite(v));
+        allYs.push(...values);
+      });
+      let minY = Math.min(...allYs);
+      let maxY = Math.max(...allYs);
+      if (minY === maxY) {
+        minY -= 0.1;
+        maxY += 0.1;
+      }
+      // For log scale, adjust minY and maxY slightly
+      const toX = w => padding.left + (w - minW)/(maxW - minW) * (width - padding.left - padding.right);
+      const toY = y => padding.top + (maxY - y)/(maxY - minY) * (height - padding.top - padding.bottom);
+      // axes
+      // x axis
+      const xAxis = document.createElementNS('http://www.w3.org/2000/svg','line');
+      xAxis.setAttribute('x1', padding.left);
+      xAxis.setAttribute('x2', width - padding.right);
+      xAxis.setAttribute('y1', height - padding.bottom);
+      xAxis.setAttribute('y2', height - padding.bottom);
+      xAxis.setAttribute('stroke','currentColor');
+      svg.appendChild(xAxis);
+      // x ticks (every 20 nm)
+      for (let w=Math.ceil(minW/20)*20; w<=maxW; w+=20) {
+        const x = toX(w);
+        const tick = document.createElementNS('http://www.w3.org/2000/svg','line');
+        tick.setAttribute('x1', x);
+        tick.setAttribute('x2', x);
+        tick.setAttribute('y1', height - padding.bottom);
+        tick.setAttribute('y2', height - padding.bottom + 5);
+        tick.setAttribute('stroke','currentColor');
+        svg.appendChild(tick);
+        const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+        lbl.setAttribute('x', x);
+        lbl.setAttribute('y', height - padding.bottom + 18);
+        lbl.setAttribute('font-size','9');
+        lbl.setAttribute('text-anchor','middle');
+        lbl.textContent = w;
+        svg.appendChild(lbl);
+      }
+      // y axis
+      const yAxis = document.createElementNS('http://www.w3.org/2000/svg','line');
+      yAxis.setAttribute('x1', padding.left);
+      yAxis.setAttribute('x2', padding.left);
+      yAxis.setAttribute('y1', padding.top);
+      yAxis.setAttribute('y2', height - padding.bottom);
+      yAxis.setAttribute('stroke','currentColor');
+      svg.appendChild(yAxis);
+      // y ticks
+      const yStep = (maxY - minY)/5;
+      for (let i=0;i<=5;i++) {
+        const yVal = minY + yStep * i;
+        const y = toY(yVal);
+        const tick = document.createElementNS('http://www.w3.org/2000/svg','line');
+        tick.setAttribute('x1', padding.left - 4);
+        tick.setAttribute('x2', padding.left);
+        tick.setAttribute('y1', y);
+        tick.setAttribute('y2', y);
+        tick.setAttribute('stroke','currentColor');
+        svg.appendChild(tick);
+        const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
+        lbl.setAttribute('x', padding.left - 6);
+        lbl.setAttribute('y', y + 3);
+        lbl.setAttribute('font-size','9');
+        lbl.setAttribute('text-anchor','end');
+        lbl.textContent = (state.logScale ? yVal.toFixed(2) : yVal.toFixed(3));
+        svg.appendChild(lbl);
+      }
+      // y axis label
+      const yTitle = document.createElementNS('http://www.w3.org/2000/svg','text');
+      yTitle.setAttribute('transform', `rotate(-90 ${padding.left - 40},${(padding.top + height - padding.bottom)/2})`);
+      yTitle.setAttribute('x', padding.left - 40);
+      yTitle.setAttribute('y', (padding.top + height - padding.bottom)/2);
+      yTitle.setAttribute('font-size','10');
+      yTitle.setAttribute('text-anchor','middle');
+      yTitle.textContent = state.logScale ? 'log10(A)' : 'Absorbance';
+      svg.appendChild(yTitle);
+      // x axis label
+      const xTitle = document.createElementNS('http://www.w3.org/2000/svg','text');
+      xTitle.setAttribute('x', (padding.left + width - padding.right)/2);
+      xTitle.setAttribute('y', height - bandHeight - 5);
+      xTitle.setAttribute('font-size','10');
+      xTitle.setAttribute('text-anchor','middle');
+      xTitle.textContent = 'Wavelength (nm)';
+      svg.appendChild(xTitle);
+
+      // wavelength colour band under the x axis
+      // Create gradient definition
+      const gradId = `grad_${Date.now().toString(36)}_${Math.floor(Math.random()*1e6)}`;
+      const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+      const grad = document.createElementNS('http://www.w3.org/2000/svg','linearGradient');
+      grad.setAttribute('id', gradId);
+      grad.setAttribute('x1', '0%');
+      grad.setAttribute('x2', '100%');
+      grad.setAttribute('y1', '0%');
+      grad.setAttribute('y2', '0%');
+      // create stops for each wavelength from minW to maxW at 10 nm increments
+      const wlStart = Math.ceil(minW / 10) * 10;
+      const wlEnd = Math.floor(maxW / 10) * 10;
+      // number of 10 nm steps (ensure at least one)
+      const totalSteps = Math.max(1, Math.floor((wlEnd - wlStart) / 10));
+      const range = wlEnd - wlStart;
+      for (let i=0; i<= totalSteps; i++) {
+        const wl = wlStart + i*10;
+        const offset = range !== 0 ? ((wl - wlStart) / range) * 100 : 0;
+        const rgb = wavelengthToSRGB(wl);
+        const hex = srgbToHex(rgb);
+        const stop = document.createElementNS('http://www.w3.org/2000/svg','stop');
+        stop.setAttribute('offset', `${offset}%`);
+        stop.setAttribute('stop-color', hex);
+        grad.appendChild(stop);
+      }
+      defs.appendChild(grad);
+      svg.appendChild(defs);
+      // Draw the band
+      const bandX = padding.left;
+      const bandY = height - bandHeight;
+      const bandW = width - padding.left - padding.right;
+      const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
+      rect.setAttribute('x', bandX);
+      rect.setAttribute('y', bandY);
+      rect.setAttribute('width', bandW);
+      rect.setAttribute('height', bandHeight);
+      rect.setAttribute('fill', `url(#${gradId})`);
+      svg.appendChild(rect);
+      // label for colour band
+      const bandLabel = document.createElementNS('http://www.w3.org/2000/svg','text');
+      bandLabel.setAttribute('x', padding.left);
+      bandLabel.setAttribute('y', height - bandHeight - 2);
+      bandLabel.setAttribute('font-size','9');
+      bandLabel.setAttribute('text-anchor','start');
+      bandLabel.textContent = 'Absorbed λ colour';
+      svg.appendChild(bandLabel);
+      // plots
+      samplesToPlot.forEach((sample, sIdx) => {
+        let ys = sample.spectrum.map(p => {
+          const v = p.absorbance;
+          if (!isFinite(v)) return NaN;
+          return state.logScale ? Math.log10(v) : v;
+        });
+        const ws = sample.spectrum.map(p => p.wavelength);
+        // optionally smooth
+        if (state.smooth && state.smoothWindow > 1) {
+          ys = savitzkyGolay(ys, state.smoothWindow);
+        }
+        const pathParts = [];
+        let started = false;
+        for (let i=0; i<ws.length; i++) {
+          const yVal = ys[i];
+          const x = toX(ws[i]);
+          const y = toY(yVal);
+          if (!isFinite(yVal)) {
+            started = false;
+            continue;
+          }
+          if (!started) {
+            pathParts.push(`M${x},${y}`);
+            started = true;
+          } else {
+            pathParts.push(`L${x},${y}`);
+          }
+        }
+        const pathEl = document.createElementNS('http://www.w3.org/2000/svg','path');
+        pathEl.setAttribute('d', pathParts.join(' '));
+        pathEl.setAttribute('fill','none');
+        pathEl.setAttribute('stroke', getSampleColor(sample));
+        pathEl.setAttribute('stroke-width','1.5');
+        pathEl.addEventListener('mousemove', evt => {
+          // show wavelength and absorbance near cursor
+          const pt = svg.createSVGPoint();
+          pt.x = evt.offsetX;
+          pt.y = evt.offsetY;
+          // invert x to wavelength
+          const wEst = minW + ((evt.offsetX - padding.left) / (width - padding.left - padding.right)) * (maxW - minW);
+          // find nearest data point
+          let idx = 0;
+          let minDist = Infinity;
+          for (let i=0; i<ws.length; i++) {
+            const dx = ws[i] - wEst;
+            if (Math.abs(dx) < minDist) { minDist = Math.abs(dx); idx = i; }
+          }
+          const tooltipVal = state.logScale ? Math.log10(sample.spectrum[idx].absorbance) : sample.spectrum[idx].absorbance;
+          showTooltip(evt.clientX, evt.clientY, `${sample['Name']}\n${ws[idx]} nm: ${tooltipVal.toFixed(3)}`);
+        });
+        pathEl.addEventListener('mouseleave', hideTooltip);
+        svg.appendChild(pathEl);
+        // area shading
+        if (state.shadeArea) {
+          const areaPath = [];
+          let startedA = false;
+          for (let i=0;i<ws.length;i++) {
+            const v = ys[i];
+            const x = toX(ws[i]);
+            const y = toY(v);
+            if (!isFinite(v)) {
+              if (startedA) {
+                areaPath.push(`L${x},${toY(minY)}`);
+                areaPath.push('Z');
+              }
+              startedA = false;
+              continue;
+            }
+            if (!startedA) {
+              areaPath.push(`M${x},${toY(minY)}`);
+              areaPath.push(`L${x},${y}`);
+              startedA = true;
+            } else {
+              areaPath.push(`L${x},${y}`);
+            }
+          }
+          if (startedA) {
+            // close path to baseline
+            const lastX = toX(ws[ws.length - 1]);
+            areaPath.push(`L${lastX},${toY(minY)}`);
+            areaPath.push('Z');
+          }
+          const areaEl = document.createElementNS('http://www.w3.org/2000/svg','path');
+          areaEl.setAttribute('d', areaPath.join(' '));
+          areaEl.setAttribute('fill', getSampleColor(sample));
+          areaEl.setAttribute('fill-opacity','0.2');
+          svg.appendChild(areaEl);
+        }
+
+        // Add label at the end of the line for exporting and persistent label
+        // display.  Find the last finite value to anchor the label.  Offset
+        // vertically by sample index to minimise overlapping text.
+        let lastIndex = -1;
+        for (let i = ys.length - 1; i >= 0; i--) {
+          if (isFinite(ys[i])) { lastIndex = i; break; }
+        }
+        if (lastIndex >= 0) {
+          const label = document.createElementNS('http://www.w3.org/2000/svg','text');
+          const lx = toX(ws[lastIndex]) + 6;
+          const ly = toY(ys[lastIndex]) - 6 - sIdx * 12;
+          label.setAttribute('x', lx);
+          label.setAttribute('y', ly);
+          label.setAttribute('class','label-export');
+          label.textContent = sample['Name'];
+          svg.appendChild(label);
+        }
+      });
+    }
+    function drawDetails() {
+      const div = document.getElementById('detailsCard');
+      if (!state.lastClicked) {
+        div.textContent = 'No sample selected.';
+        return;
+      }
+      const sample = state.samples.find(s => s.id === state.lastClicked);
+      if (!sample) {
+        div.textContent = 'No sample selected.';
+        return;
+      }
+      const html = [];
+      html.push(`<h2>${sample['Name']}</h2>`);
+      html.push(`<p>No.: ${sample['No.']}<br>Date: ${sample['Date']} ${sample['Time']}<br>Average: ${sample['Average']}<br>Illuminant: ${sample['Illuminant']}<br>Attachment: ${sample['Attachment'] || ''}</p>`);
+      html.push('<table><thead><tr><th>Scale</th><th>Value</th></tr></thead><tbody>');
+      // Only display L*, a*, b* and colour scales; omit C* and h° to simplify details
+      [['L*','L*'],['a*','a*'],['b*','b*'],['Hazen','Hazen(APHA)'],['Gardner','Gardner'],['Saybolt','Saybolt'],['ASTM','ASTM'],['Pt-Co','Pt-Co']].forEach(([label,key]) => {
+        const v = sample[key];
+        if (!isFinite(v)) return;
+        const digits = (label === 'Hazen' || label === 'Gardner' || label === 'Saybolt' || label === 'ASTM' || label === 'Pt-Co') ? 1 : 2;
+        html.push(`<tr><td>${label}</td><td>${v.toFixed(digits)}</td></tr>`);
+      });
+      html.push('</tbody></table>');
+      // sparkline
+      html.push('<svg id="detailSpark" width="100%" height="80"></svg>');
+      div.innerHTML = html.join('');
+      // draw sparkline
+      const spSvg = document.getElementById('detailSpark');
+      const w = spSvg.clientWidth;
+      const h = spSvg.clientHeight;
+      const spPad = {top:5,right:5,bottom:5,left:5};
+      const spWs = sample.spectrum.map(p => p.wavelength);
+      const spYs = sample.spectrum.map(p => p.absorbance);
+      const sminW = Math.min(...spWs);
+      const smaxW = Math.max(...spWs);
+      const sminY = Math.min(...spYs.filter(v => isFinite(v)));
+      const smaxY = Math.max(...spYs.filter(v => isFinite(v)));
+      const sx = w => spPad.left + (w - sminW)/(smaxW - sminW) * (w - spPad.left - spPad.right);
+      const sy = y => spPad.top + (smaxY - y)/(smaxY - sminY) * (h - spPad.top - spPad.bottom);
+      const spPath = [];
+      for (let i=0;i<spWs.length;i++) {
+        const yVal = spYs[i];
+        const x = sx(spWs[i]);
+        const y = sy(yVal);
+        if (!isFinite(yVal)) {
+          continue;
+        }
+        spPath.push(i===0 ? `M${x},${y}` : `L${x},${y}`);
+      }
+      const spEl = document.createElementNS('http://www.w3.org/2000/svg','path');
+      spEl.setAttribute('d', spPath.join(' '));
+      spEl.setAttribute('fill','none');
+      spEl.setAttribute('stroke', getSampleColor(sample));
+      spEl.setAttribute('stroke-width','1');
+      spSvg.appendChild(spEl);
+
+      // After the sparkline, display a compact list of absorbance values.
+      // Show only the numeric values (no header) separated by spaces.
+      // Values are formatted to three decimals.  Missing values are
+      // skipped.
+      const values = sample.spectrum.map(p => {
+        const y = p.absorbance;
+        return isFinite(y) ? y.toFixed(3) : null;
+      }).filter(v => v !== null);
+      if (values.length) {
+        const para = document.createElement('p');
+        para.style.marginTop = '0.5rem';
+        para.style.fontFamily = 'monospace';
+        para.style.fontSize = '0.8rem';
+        para.textContent = values.join(' ');
+        div.appendChild(para);
+      }
+    }
+    function getSampleColor(sample) {
+      const mode = state.colorBy;
+      let key;
+      if (mode === 'sample') key = sample.id;
+      else if (mode === 'illuminant') key = sample.Illuminant || sample.id;
+      else if (mode === 'average') key = sample['Average'] || sample.id;
+      return hashColor(key);
+    }
+    function drawAll() {
+      updateTable();
+      if (state.activeTab === 'scales') drawScales();
+      else if (state.activeTab === 'cielab') {
+        drawAB();
+        drawL();
+      }
+      else if (state.activeTab === 'spectrum') drawSpectrum();
+      else if (state.activeTab === 'details') drawDetails();
+    }
+
+    // ----------------------------
+    // redraw scheduling helper
+    // ----------------------------
+    // When updating the UI, we frequently need to redraw charts. If we call
+    // drawAll() synchronously during certain events (e.g. file load, selection
+    // toggles) the SVG elements may not yet have a proper width/height
+    // because the browser hasn’t laid out the DOM. To avoid drawing into a
+    // zero‑sized canvas, we provide a scheduleDraw() helper that uses
+    // requestAnimationFrame. It coalesces multiple redraw requests into a
+    // single frame and only schedules one at a time.
+    let drawScheduled = false;
+    function scheduleDraw() {
+      if (drawScheduled) return;
+      drawScheduled = true;
+      requestAnimationFrame(() => {
+        drawScheduled = false;
+        drawAll();
+      });
+    }
+    // Tooltip management
+    const tooltip = document.getElementById('tooltip');
+    function showTooltip(x,y,content) {
+      tooltip.style.display = 'block';
+      tooltip.style.left = (x + 10) + 'px';
+      tooltip.style.top = (y + 10) + 'px';
+      tooltip.textContent = content;
+    }
+    function hideTooltip() {
+      tooltip.style.display = 'none';
+    }
+    // Event listeners
+    document.getElementById('uploadZone').addEventListener('click', () => {
+      document.getElementById('fileInput').click();
+    });
+    document.getElementById('fileInput').addEventListener('change', async (ev) => {
+      const files = Array.from(ev.target.files);
+      // reset current samples and selection on new load
+      state.samples = [];
+      state.selected = new Set();
+      let allWarnings = [];
+      for (const file of files) {
+        const text = await file.text();
+        const {samples, warnings} = parseCSV(text);
+        state.samples.push(...samples);
+        if (warnings && warnings.length) allWarnings.push(...warnings);
+      }
+      updateWarning(allWarnings);
+      updateIlluminantOptions();
+      persistState();
+      scheduleDraw();
+      // Clear value so selecting same file again triggers change
+      ev.target.value = '';
+    });
+    // Drag and drop
+    document.getElementById('uploadZone').addEventListener('dragover', (ev) => {
+      ev.preventDefault();
+      ev.currentTarget.classList.add('dragover');
+    });
+    document.getElementById('uploadZone').addEventListener('dragleave', (ev) => {
+      ev.currentTarget.classList.remove('dragover');
+    });
+    document.getElementById('uploadZone').addEventListener('drop', async (ev) => {
+      ev.preventDefault();
+      ev.currentTarget.classList.remove('dragover');
+      const files = Array.from(ev.dataTransfer.files).filter(f => /\.csv$/i.test(f.name));
+      // reset samples and selection on new load via drop
+      state.samples = [];
+      state.selected = new Set();
+      let allWarnings = [];
+      for (const file of files) {
+        const text = await file.text();
+        const {samples, warnings} = parseCSV(text);
+        state.samples.push(...samples);
+        if (warnings && warnings.length) allWarnings.push(...warnings);
+      }
+      updateWarning(allWarnings);
+      updateIlluminantOptions();
+      persistState();
+      scheduleDraw();
+    });
+    document.getElementById('selectAll').addEventListener('change', (ev) => {
+      const checked = ev.target.checked;
+      filteredSamples().forEach(sample => {
+        if (checked) state.selected.add(sample.id);
+        else state.selected.delete(sample.id);
+      });
+      persistState();
+      scheduleDraw();
+    });
+    document.getElementById('colorBy').addEventListener('change', (ev) => {
+      state.colorBy = ev.target.value;
+      persistState();
+      scheduleDraw();
+    });
+    document.getElementById('illuminantFilter').addEventListener('change', (ev) => {
+      state.illuminantFilter = ev.target.value;
+      persistState();
+      scheduleDraw();
+    });
+    document.getElementById('groupByIlluminant').addEventListener('change', (ev) => {
+      state.groupByIlluminant = ev.target.checked;
+      persistState();
+      scheduleDraw();
+    });
+    document.getElementById('searchBox').addEventListener('input', (ev) => {
+      state.search = ev.target.value;
+      persistState();
+      scheduleDraw();
+    });
+    document.querySelectorAll('.tabs button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.activeTab = btn.dataset.tab;
+        persistState();
+        document.querySelectorAll('.tab-content').forEach(tc => tc.style.display = 'none');
+        document.getElementById('tab-' + state.activeTab).style.display = 'block';
+        scheduleDraw();
+      });
+    });
+    document.getElementById('logScale').addEventListener('change', (ev) => {
+      state.logScale = ev.target.checked;
+      persistState();
+      if (state.activeTab === 'spectrum') drawSpectrum();
+    });
+    document.getElementById('smoothToggle').addEventListener('change', (ev) => {
+      state.smooth = ev.target.checked;
+      persistState();
+      if (state.activeTab === 'spectrum') drawSpectrum();
+    });
+    document.getElementById('smoothWindow').addEventListener('input', (ev) => {
+      const v = parseInt(ev.target.value);
+      state.smoothWindow = v;
+      persistState();
+      if (state.activeTab === 'spectrum' && state.smooth) drawSpectrum();
+    });
+    document.getElementById('shadeArea').addEventListener('change', (ev) => {
+      state.shadeArea = ev.target.checked;
+      persistState();
+      if (state.activeTab === 'spectrum') drawSpectrum();
+    });
+
+    // Delete selected samples button
+    document.getElementById('deleteSamples').addEventListener('click', () => {
+      const ids = Array.from(state.selected);
+      if (ids.length === 0) {
+        alert('No samples selected to delete.');
+        return;
+      }
+      // Remove samples whose id is in the selected set
+      state.samples = state.samples.filter(s => !state.selected.has(s.id));
+      // Clear current selection and reset last clicked if necessary
+      state.selected.clear();
+      if (state.lastClicked && ids.includes(state.lastClicked)) {
+        state.lastClicked = null;
+      }
+      updateIlluminantOptions();
+      // Do not persist samples, but UI state remains
+      scheduleDraw();
+      drawDetails();
+    });
+    // Export PNG button
+    document.getElementById('exportPng').addEventListener('click', () => {
+      const timeStamp = new Date().toISOString().replace(/[:.]/g,'-');
+      // Add 'exporting' class to the document element to reveal export-only
+      // labels (like sample names on the AB plot). These labels are hidden on
+      // screen but should be visible in the exported images. Remove the
+      // class once all PNGs have been generated.
+      document.documentElement.classList.add('exporting');
+      // Perform exports asynchronously to allow the DOM to update. Use
+      // requestAnimationFrame to ensure the export labels become visible
+      // before serialising the SVG.
+      requestAnimationFrame(() => {
+        if (state.activeTab === 'scales') {
+          exportSVGToPNG(document.getElementById('scalesChart'), `scales_${timeStamp}.png`);
+        } else if (state.activeTab === 'cielab') {
+          exportSVGToPNG(document.getElementById('abChart'), `cielab_ab_${timeStamp}.png`);
+          exportSVGToPNG(document.getElementById('lChart'), `cielab_L_${timeStamp}.png`);
+        } else if (state.activeTab === 'spectrum') {
+          exportSVGToPNG(document.getElementById('spectrumChart'), `spectrum_${timeStamp}.png`);
+        }
+        // Remove exporting class after a short delay to avoid leaving
+        // labels visible on the page. The timeout allows the browser
+        // enough time to initiate the downloads.
+        setTimeout(() => {
+          document.documentElement.classList.remove('exporting');
+        }, 200);
+      });
+    });
+
+    // Dark mode toggle
+    const themeToggle = document.getElementById('themeToggle');
+    themeToggle.addEventListener('click', () => {
+      // Flip between light and dark themes. Remove both theme classes and
+      // then add the selected one. This overrides the OS preference.
+      state.theme = state.theme === 'dark' ? 'light' : 'dark';
+      const docEl = document.documentElement;
+      docEl.classList.remove('dark', 'light');
+      docEl.classList.add(state.theme);
+      persistState();
+    });
+
+    // Toggle main panel visibility (hide/show charts)
+    const togglePanelBtn = document.getElementById('toggleMainPanel');
+    togglePanelBtn.addEventListener('click', () => {
+      const containerEl = document.getElementById('container');
+      const hide = containerEl.classList.toggle('hide-main');
+      // Update the button title to reflect the action when clicked next
+      togglePanelBtn.title = hide ? 'Show charts' : 'Hide charts';
+    });
+
+    // Toggle persistent display of labels.  When enabled, a CSS class
+    // (.show-labels) is applied to the root element, which causes
+    // export labels to be visible at all times.  Persist the setting
+    // and update the button title accordingly.
+    const labelsToggle = document.getElementById('labelsToggle');
+    function updateLabelsToggleUI() {
+      labelsToggle.title = state.showLabels ? 'Hide labels' : 'Show labels';
+    }
+    labelsToggle.addEventListener('click', () => {
+      state.showLabels = !state.showLabels;
+      const root = document.documentElement;
+      if (state.showLabels) {
+        root.classList.add('show-labels');
+      } else {
+        root.classList.remove('show-labels');
+      }
+      updateLabelsToggleUI();
+      persistState();
+    });
+    // Export CSV button
+    document.getElementById('exportCsv').addEventListener('click', () => {
+      const rows = filteredSamples().filter(s => state.selected.has(s.id));
+      if (rows.length === 0) {
+        alert('No samples selected to export.');
+        return;
+      }
+      // build CSV header and rows
+      const header = ['No.','Name','Date','Time','Average','Illuminant','Attachment','L*','a*','b*','Hazen(APHA)','Gardner','Saybolt','ASTM','Pt-Co'];
+      // gather unique wavelengths across samples
+      const wlSet = new Set();
+      rows.forEach(s => s.spectrum.forEach(p => wlSet.add(p.wavelength)));
+      const wavelengths = Array.from(wlSet).sort((a,b) => a-b);
+      wavelengths.forEach(w => header.push(`${w}nm(A)`));
+      const lines = [];
+      lines.push(header.join(','));
+      rows.forEach(s => {
+        const row = [];
+        header.forEach(col => {
+          if (['No.','Name','Date','Time','Average','Illuminant','Attachment'].includes(col)) {
+            row.push(s[col] || '');
+          } else if (['L*','a*','b*','Hazen(APHA)','Gardner','Saybolt','ASTM','Pt-Co'].includes(col)) {
+            const v = s[col];
+            row.push(isFinite(v) ? v.toFixed(3) : '');
+          } else {
+            // spectral
+            const m = col.match(/^(\d+)nm\(A\)$/);
+            if (m) {
+              const wl = parseInt(m[1]);
+              const p = s.spectrum.find(p => p.wavelength === wl);
+              const v = p ? p.absorbance : NaN;
+              row.push(isFinite(v) ? v.toFixed(3) : '');
+            } else {
+              row.push('');
+            }
+          }
+        });
+        lines.push(row.join(','));
+      });
+      const csvText = lines.join('\n');
+      const ts = new Date().toISOString().replace(/[:.]/g,'-');
+      download(`samples_${ts}.csv`, csvText);
+    });
+    // Paste load button
+    document.getElementById('loadPaste').addEventListener('click', () => {
+      const text = document.getElementById('paste-area').value;
+      // reset samples and selection before loading pasted CSV
+      state.samples = [];
+      state.selected = new Set();
+      const {samples, warnings} = parseCSV(text);
+      state.samples.push(...samples);
+      updateWarning(warnings);
+      updateIlluminantOptions();
+      persistState();
+      scheduleDraw();
+    });
+    // Fake generator
+    document.getElementById('generateFake').addEventListener('click', () => {
+      // generate two fake samples for testing overlay
+      const base = [
+        {id:'fake1', 'No.':'F001', Name:'Fake A', Date:'2025/09/04', Time:'12:00:00', Average:'A/2', Illuminant:'D65/10', Attachment:'None', 'L*':70, 'a*':20, 'b*':40, 'Hazen(APHA)':200, 'Gardner':5, 'Saybolt':5, 'ASTM':3, 'Pt-Co':100, spectrum:[]},
+        {id:'fake2', 'No.':'F002', Name:'Fake B', Date:'2025/09/04', Time:'12:01:00', Average:'A/2', Illuminant:'C/2', Attachment:'None', 'L*':50, 'a*':-30, 'b*':10, 'Hazen(APHA)':50, 'Gardner':2, 'Saybolt':10, 'ASTM':1, 'Pt-Co':60, spectrum:[]}
+      ];
+      // create spectra 400-700 with simple shapes
+      for (const s of base) {
+        for (let wl=400; wl<=700; wl+=10) {
+          // Generate two different gaussian-like spectra for the two fakes
+          const val = s === base[0]
+            ? Math.exp(-Math.pow((wl - 500) / 60, 2))
+            : Math.exp(-Math.pow((wl - 600) / 40, 2));
+          s.spectrum.push({ wavelength: wl, absorbance: val });
+        }
+        // Precompute C* and hue, though not displayed; might be useful
+        s.Cstar = Math.hypot(s['a*'], s['b*']);
+        s.hueDeg = (Math.atan2(s['b*'], s['a*']) * 180 / Math.PI + 360) % 360;
+        // Compute sRGB and hex so the fake samples also display actual colours
+        const rgb = labToSRGB({ L: s['L*'], a: s['a*'], b: s['b*'] });
+        s.srgb = rgb;
+        s.hex = srgbToHex(rgb);
+      }
+      state.samples.push(...base);
+      updateIlluminantOptions();
+      persistState();
+      scheduleDraw();
+    });
+    // Initialize initial render
+    // Apply persisted theme before first render to avoid flash. We remove any
+    // existing theme classes and add either .dark or .light to explicitly
+    // override the OS preference. This ensures the toggle fully controls
+    // the colour scheme.
+    document.documentElement.classList.remove('dark', 'light');
+    document.documentElement.classList.add(state.theme);
+
+    // Apply persistent label visibility preference on load
+    if (state.showLabels) {
+      document.documentElement.classList.add('show-labels');
+    }
+    updateLabelsToggleUI();
+    updateIlluminantOptions();
+    updateTable();
+    if (state.activeTab === 'scales') drawScales();
+    else if (state.activeTab === 'cielab') { drawAB(); drawL(); }
+    else if (state.activeTab === 'spectrum') drawSpectrum();
+    else drawDetails();
+    // restore selected sample colors and details
+    drawDetails();
+
+    // Observe container resizing to redraw charts so they fit within the panel
+    try {
+      const resObs = new ResizeObserver(() => {
+        // Re‑draw current active tab when the main container or its children resize
+        scheduleDraw();
+      });
+      // Observe the main content area which contains the tab panels
+      resObs.observe(document.getElementById('main'));
+    } catch (e) {
+      // Fallback: redraw on window resize if ResizeObserver unsupported
+      window.addEventListener('resize', drawAll);
+    }
+  })();
+  </script>
+</body>
+</html>
