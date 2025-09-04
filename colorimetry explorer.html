@@ -234,6 +234,10 @@
          charts feeling generous on typical screens. */
       height: 500px;
       display: block;
+      color: var(--fg);
+    }
+    svg.chart text {
+      fill: var(--fg);
     }
 
     /* When the container has the hide-main class, hide the right hand
@@ -1202,12 +1206,8 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         const size = 5;
         const tri = document.createElementNS('http://www.w3.org/2000/svg','polygon');
         tri.setAttribute('points', `${x},${y-size} ${x-size},${y+size} ${x+size},${y+size}`);
-        // fill with actual Lab colour if available, fallback to palette
-        if (sample.hex) {
-          tri.setAttribute('fill', sample.hex);
-        } else {
-          tri.setAttribute('fill', getSampleColor(sample));
-        }
+        // fill using palette colour to match other charts
+        tri.setAttribute('fill', getSampleColor(sample));
         tri.setAttribute('stroke', 'currentColor');
         tri.setAttribute('stroke-width', '0.5');
         tri.addEventListener('mousemove', evt => {
@@ -1240,7 +1240,7 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
 
       // legend for selected samples with Lab values
       const legend = document.createElementNS('http://www.w3.org/2000/svg','g');
-      const legendX = width - padding + 10;
+      const legendX = 10;
       const legendY = padding;
       selectedAB.forEach((sample, idx) => {
         const swatch = document.createElementNS('http://www.w3.org/2000/svg','rect');
@@ -1248,7 +1248,7 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         swatch.setAttribute('y', legendY + idx * 14);
         swatch.setAttribute('width', 12);
         swatch.setAttribute('height', 12);
-        swatch.setAttribute('fill', sample.hex || getSampleColor(sample));
+        swatch.setAttribute('fill', getSampleColor(sample));
         legend.appendChild(swatch);
         const txt = document.createElementNS('http://www.w3.org/2000/svg','text');
         txt.setAttribute('x', legendX + 16);
@@ -1344,11 +1344,8 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         const markerX = axisX + barWidth + 10;
         const tri = document.createElementNS('http://www.w3.org/2000/svg','polygon');
         tri.setAttribute('points', `${markerX},${yPos} ${markerX+size},${yPos-size} ${markerX+size},${yPos+size}`);
-        if (sample.hex) {
-          tri.setAttribute('fill', sample.hex);
-        } else {
-          tri.setAttribute('fill', getSampleColor(sample));
-        }
+        // fill using palette colour to match other charts
+        tri.setAttribute('fill', getSampleColor(sample));
         tri.setAttribute('stroke','currentColor');
         tri.setAttribute('stroke-width','0.5');
         tri.addEventListener('mousemove', evt => {
