@@ -79,23 +79,6 @@
       font-size: 1.25em;
     }
 
-    /* Export labels are hidden by default but shown when the root element has
-       the `.exporting` class applied. */
-    .label-export {
-      display: none;
-      font-size: 9px;
-      fill: currentColor;
-    }
-    :root.exporting .label-export {
-      display: block;
-    }
-
-    /* When the root has .show-labels class, force export labels to be
-       visible in the interface. This allows the user to toggle labels on
-       permanently without entering export mode. */
-    :root.show-labels .label-export {
-      display: block;
-    }
     body {
       margin: 0;
       padding: 0;
@@ -227,13 +210,20 @@
     }
     svg.chart {
       width: 100%;
-      /* Increase the default chart height to allow more vertical space for
-         scales, CIELAB and spectrum plots. A larger height helps the
-         CIELAB circle and L* ruler appear less cramped.  We allocate
-         extra room here (500px) so that the 125% zoom still leaves
-         charts feeling generous on typical screens. */
+      /* Default chart height */
       height: 500px;
       display: block;
+      color: var(--fg);
+    }
+    #abChart, #lChart {
+      height: 600px;
+    }
+    #spectrumChart {
+      height: 750px;
+    }
+    svg.chart text {
+      fill: var(--fg);
+      font-size: 14px;
     }
 
     /* When the container has the hide-main class, hide the right hand
@@ -261,6 +251,9 @@
     .details-card th, .details-card td {
       padding: 0.2rem 0.5rem;
       border-bottom: 1px solid var(--border);
+    }
+    .details-card th {
+      text-align: center;
     }
     .tooltip {
       position: fixed;
@@ -290,15 +283,10 @@
       <label>Illuminant:<select id="illuminantFilter"><option value="">All</option></select></label>
       <label>Group by Illuminant:<input type="checkbox" id="groupByIlluminant" /></label>
       <input type="search" id="searchBox" placeholder="Search Name or No." />
-      <button id="exportPng">Export Charts (PNG)</button>
       <button id="exportCsv">Export Filtered CSV</button>
       <!-- Dark mode toggle button. Clicking this button toggles a .dark class on the root element
            and persists the choice in localStorage. -->
       <button id="themeToggle" title="Toggle dark mode" style="margin-left:auto">🌓</button>
-      <!-- Toggle display of labels.  When enabled, all marker labels (sample names
-           and values) are shown persistently rather than only on hover or export.
-           The button updates its title to reflect the next action. -->
-      <button id="labelsToggle" title="Show labels">🔖</button>
       <!-- Toggle visibility of the chart panel. When clicked, this button collapses the
            main panel containing the charts so that the sample sidebar fills the available space.
            Clicking again restores the charts. The button label updates to indicate the
@@ -313,6 +301,7 @@
         <thead>
           <tr>
             <th><input type="checkbox" id="selectAll" title="Select All/None" /></th>
+            <th>Color</th>
             <th>No.</th>
             <th>Name</th>
             <th>Date</th>
@@ -332,17 +321,8 @@
         <tbody></tbody>
       </table>
       <div style="padding:0.5rem">
-        <label>Color by:
-          <select id="colorBy">
-            <option value="sample">Sample</option>
-            <option value="illuminant">Illuminant</option>
-            <option value="average">Average</option>
-          </select>
-        </label>
         <!-- Button to delete any currently selected samples from the program. -->
-        <div style="margin-top:0.5rem">
-          <button id="deleteSamples" title="Remove selected samples from the list">Delete Selected</button>
-        </div>
+        <button id="deleteSamples" title="Remove selected samples from the list">Delete Selected</button>
       </div>
     </aside>
     <main id="main">
@@ -377,16 +357,7 @@
       </div>
     </main>
   </div>
-  <details style="padding:1rem;border-top:1px solid var(--border)">
-    <summary>Paste CSV for testing</summary>
-    <textarea id="paste-area">No.,Name,Date,Time,Average,Illuminant,Attachment,L*,a*,b*,Hazen(APHA),Gardner,Saybolt,ASTM,Pt-Co,400nm(A),410nm(A),420nm(A),430nm(A),440nm(A),450nm(A),460nm(A),470nm(A),480nm(A),490nm(A),500nm(A),510nm(A),520nm(A),530nm(A),540nm(A),550nm(A),560nm(A),570nm(A),580nm(A),590nm(A),600nm(A),610nm(A),620nm(A),630nm(A),640nm(A),650nm(A),660nm(A),670nm(A),680nm(A),690nm(A),700nm(A)
-M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92,  38.78,    290,    6.0,    5.0,    0.8,    238,  1.583,  1.206,  0.847,  0.598,  0.491,  0.419,  0.354,  0.295,  0.248,  0.212,  0.182,  0.156,  0.133,  0.115,  0.100,  0.087,  0.075,  0.065,  0.056,  0.048,  0.040,  0.035,  0.030,  0.026,  0.023,  0.018,  0.014,  0.010,  0.007,  0.004,  0.000</textarea>
-    <div style="margin-top:0.5rem">
-      <button id="loadPaste">Load Pasted CSV</button>
-      <button id="generateFake">Generate Fake Samples</button>
-    </div>
-  </details>
-  <div id="tooltip" class="tooltip" style="display:none"></div>
+    <div id="tooltip" class="tooltip" style="display:none"></div>
   <script>
   (function() {
     // State management
@@ -396,7 +367,6 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
       // currently selected sample ids for overlay
       selected: new Set(),
       // UI toggles – these may be persisted
-      colorBy: 'sample',
       activeTab: 'scales',
       logScale: false,
       smooth: false,
@@ -409,14 +379,12 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
       lastClicked: null,
       // explicit theme string: 'light' or 'dark'
       theme: 'light',
-      // show labels persistently when true
-      showLabels: false,
     };
     // Attempt to load persisted UI state
     try {
       const stored = JSON.parse(localStorage.getItem('colorimetryState') || '{}');
       // Only assign known persisted keys to avoid clobbering arrays/sets
-      ['colorBy','activeTab','logScale','smooth','smoothWindow','shadeArea','groupByIlluminant','theme','showLabels'].forEach(key => {
+      ['activeTab','logScale','smooth','smoothWindow','shadeArea','groupByIlluminant','theme'].forEach(key => {
         if (stored.hasOwnProperty(key)) state[key] = stored[key];
       });
     } catch (e) {
@@ -427,7 +395,6 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
       // Only persist UI toggles as requested; samples, selections, search, filters
       // are intentionally not stored across sessions for reliability.
       const toStore = {
-        colorBy: state.colorBy,
         activeTab: state.activeTab,
         logScale: state.logScale,
         smooth: state.smooth,
@@ -435,7 +402,6 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         shadeArea: state.shadeArea,
         groupByIlluminant: state.groupByIlluminant,
         theme: state.theme,
-        showLabels: state.showLabels,
       };
       try {
         localStorage.setItem('colorimetryState', JSON.stringify(toStore));
@@ -458,17 +424,11 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
       const n = parseFloat(s);
       return isNaN(n) ? NaN : n;
     }
-    function hashColor(key) {
-      // Generate HSL color based on string hash for deterministic palette
-      let hash = 0;
-      for (let i = 0; i < key.length; i++) {
-        hash = ((hash << 5) - hash + key.charCodeAt(i)) | 0;
-      }
-      const hue = Math.abs(hash) % 360;
-      const sat = 60 + (Math.abs(hash) % 20);
-      const light = 40 + (Math.abs(hash) % 20);
-      return `hsl(${hue},${sat}%,${light}%)`;
-    }
+    const COLOR_OPTIONS = [
+      '#e6194b','#3cb44b','#ffe119','#0082c8','#f58231',
+      '#911eb4','#46f0f0','#f032e6','#d2f53c','#fabebe',
+      '#008080','#e6beff','#aa6e28','#800000','#aaffc3'
+    ];
     function download(filename, text) {
       const blob = new Blob([text], {type:'text/plain'});
       const url = URL.createObjectURL(blob);
@@ -482,41 +442,12 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         URL.revokeObjectURL(url);
       }, 0);
     }
-    function exportSVGToPNG(svgElement, filename) {
-      // Clone the SVG element to inject namespace declarations required for
-      // proper export. Without xmlns and xmlns:xlink, external resources
-      // such as gradients and clipPaths may not render in the resulting
-      // image. We then serialise the clone instead of the original.
-      const clone = svgElement.cloneNode(true);
-      if (!clone.getAttribute('xmlns')) {
-        clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-      }
-      if (!clone.getAttribute('xmlns:xlink')) {
-        clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink');
-      }
-      const svgData = new XMLSerializer().serializeToString(clone);
-      const canvas = document.createElement('canvas');
-      const bbox = svgElement.getBoundingClientRect();
-      canvas.width = bbox.width;
-      canvas.height = bbox.height;
-      const ctx = canvas.getContext('2d');
-      const img = new Image();
-      img.onload = function() {
-        ctx.drawImage(img, 0, 0);
-        canvas.toBlob(function(blob) {
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = filename;
-          document.body.appendChild(a);
-          a.click();
-          setTimeout(() => {
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-          }, 0);
-        });
-      };
-      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgData);
+    function assignDefaultColors(samples) {
+      let idx = state.samples.length;
+      samples.forEach(s => {
+        s.color = COLOR_OPTIONS[idx % COLOR_OPTIONS.length];
+        idx++;
+      });
     }
     function savitzkyGolay(y, windowSize) {
       // Very simple Savitzky-Golay smoothing (no derivative). Assumes windowSize is odd.
@@ -601,6 +532,13 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
       const [r,g,b] = rgb;
       return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
     }
+    function idealTextColor(hex) {
+      const r = parseInt(hex.slice(1,3),16);
+      const g = parseInt(hex.slice(3,5),16);
+      const b = parseInt(hex.slice(5,7),16);
+      const lum = 0.299*r + 0.587*g + 0.114*b;
+      return lum > 186 ? '#000' : '#fff';
+    }
     // Approximate mapping from wavelength (nm) to sRGB. Only defined for 400–700 nm.
     function wavelengthToSRGB(nm) {
       let r=0, g=0, b=0;
@@ -660,7 +598,7 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
       // The image provided shows discrete steps at half‑unit increments; we
       // interpolate between a broader set of anchor points to give a smooth
       // gradient. See user‑supplied chart for target colours.
-      'ASTMd1500': [
+      'ASTM D1500': [
         { value: 0,   color: '#fff9c4' }, // very pale yellow
         { value: 1,   color: '#ffe173' }, // light golden
         { value: 2,   color: '#ffb100' }, // orange
@@ -817,6 +755,28 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         const tdCb = document.createElement('td');
         tdCb.appendChild(cb);
         tr.appendChild(tdCb);
+        if (!sample.color) sample.color = COLOR_OPTIONS[0];
+        const colorSel = document.createElement('select');
+        COLOR_OPTIONS.forEach((col, idx) => {
+          const opt = document.createElement('option');
+          opt.value = col;
+          opt.textContent = idx + 1;
+          opt.style.backgroundColor = col;
+          opt.style.color = idealTextColor(col);
+          colorSel.appendChild(opt);
+        });
+        colorSel.value = sample.color;
+        colorSel.style.backgroundColor = sample.color;
+        colorSel.style.color = idealTextColor(sample.color);
+        colorSel.addEventListener('change', () => {
+          sample.color = colorSel.value;
+          colorSel.style.backgroundColor = sample.color;
+          colorSel.style.color = idealTextColor(sample.color);
+          scheduleDraw();
+        });
+        const tdColor = document.createElement('td');
+        tdColor.appendChild(colorSel);
+        tr.appendChild(tdColor);
         [ 'No.', 'Name', 'Date', 'Time', 'Average', 'Illuminant', 'L*', 'a*', 'b*', 'Hazen(APHA)', 'Gardner', 'Saybolt', 'ASTM', 'Pt-Co' ].forEach(key => {
           const td = document.createElement('td');
           const val = sample[key];
@@ -911,7 +871,7 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
       svg.appendChild(defs);
       const scales = [
         // ASTM D1500 scale ranges from 0 to 8. Gardner is no longer used.
-        {name:'ASTMd1500', min:0, max:8, step:1, valKey:'ASTM'},
+        {name:'ASTM D1500', min:0, max:8, step:1, valKey:'ASTM'},
         {name:'Saybolt', min:-16, max:30, step:2, valKey:'Saybolt'},
         {name:'Pt-Co (Hazen)', min:0, max:500, step:50, valKey:'Pt-Co'},
       ];
@@ -936,10 +896,10 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
           gradient.appendChild(stopEl);
         });
         defs.appendChild(gradient);
-        // Draw the colour bar behind the axis line.  Increase thickness
-        // relative to the original design to better fill the available
-        // vertical space at 125% zoom.  A 30px height gives clear
-        // delineation of the gradient without overwhelming the axis.
+        // Draw the colour bar. Increase thickness relative to the original
+        // design to better fill the available vertical space at 125% zoom.
+        // A 30px height gives clear delineation of the gradient without
+        // overwhelming the axis.
         const barHeight = 30;
         const barY = y0 + chartHeight/2 - barHeight/2;
         const bar = document.createElementNS('http://www.w3.org/2000/svg','rect');
@@ -949,37 +909,39 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         bar.setAttribute('height', barHeight);
         bar.setAttribute('fill', `url(#${gradId})`);
         svg.appendChild(bar);
-        // axis line
+        // axis line positioned below the colour bar so that ticks and
+        // labels remain legible against the background colours
+        const axisY = barY + barHeight + 6;
         const line = document.createElementNS('http://www.w3.org/2000/svg','line');
         line.setAttribute('x1', padding.left);
         line.setAttribute('x2', width - padding.right);
-        line.setAttribute('y1', y0 + chartHeight/2);
-        line.setAttribute('y2', y0 + chartHeight/2);
+        line.setAttribute('y1', axisY);
+        line.setAttribute('y2', axisY);
         line.setAttribute('stroke', 'currentColor');
         svg.appendChild(line);
-        // ticks
+        // ticks and numeric labels beneath the bar
         for (let v=sc.min; v<=sc.max; v+=sc.step) {
           const x = padding.left + (v - sc.min)/(sc.max - sc.min) * (width - padding.left - padding.right);
           const tick = document.createElementNS('http://www.w3.org/2000/svg','line');
           tick.setAttribute('x1', x);
           tick.setAttribute('x2', x);
-          tick.setAttribute('y1', y0 + chartHeight/2 - 4);
-          tick.setAttribute('y2', y0 + chartHeight/2 + 4);
+          tick.setAttribute('y1', axisY);
+          tick.setAttribute('y2', axisY - 6);
           tick.setAttribute('stroke', 'currentColor');
           svg.appendChild(tick);
           const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
           lbl.setAttribute('x', x);
-          lbl.setAttribute('y', y0 + chartHeight/2 + 15);
+          lbl.setAttribute('y', axisY + 16);
           lbl.setAttribute('text-anchor', 'middle');
-          lbl.setAttribute('font-size', '10');
+          lbl.setAttribute('font-size', '14');
           lbl.textContent = v;
           svg.appendChild(lbl);
         }
         // title
         const title = document.createElementNS('http://www.w3.org/2000/svg','text');
         title.setAttribute('x', padding.left);
-        title.setAttribute('y', y0 + 12);
-        title.setAttribute('font-size','11');
+        title.setAttribute('y', y0 + 16);
+        title.setAttribute('font-size','16');
         title.setAttribute('font-weight','bold');
         title.textContent = sc.name;
         svg.appendChild(title);
@@ -1002,32 +964,6 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
           const tri = document.createElementNS('http://www.w3.org/2000/svg','polygon');
           tri.setAttribute('points', `${x},${y-size} ${x-size},${y+size} ${x+size},${y+size}`);
           tri.setAttribute('fill', getSampleColor(sample));
-          // colour chip (rounded square) using actual Lab colour if available
-          if (sample.hex) {
-            const chipSize = 8;
-            const chip = document.createElementNS('http://www.w3.org/2000/svg','rect');
-            chip.setAttribute('x', x + size + 2);
-            chip.setAttribute('y', y - chipSize/2);
-            chip.setAttribute('width', chipSize);
-            chip.setAttribute('height', chipSize);
-            chip.setAttribute('rx', 2);
-            chip.setAttribute('ry', 2);
-            chip.setAttribute('fill', sample.hex);
-            chip.setAttribute('stroke', 'var(--border)');
-            chip.setAttribute('stroke-width', '0.5');
-            chip.addEventListener('mousemove', evt => {
-              const tooltipLines = [];
-              tooltipLines.push(sample['Name']);
-              tooltipLines.push(`${sc.name}: ${isFinite(usedVal) ? usedVal.toFixed(1) : ''}`);
-              tooltipLines.push(`${sample['Date']} ${sample['Time']}`);
-              if (isFinite(sample['L*']) && isFinite(sample['a*']) && isFinite(sample['b*'])) {
-                tooltipLines.push(`L*: ${sample['L*'].toFixed(2)}  a*: ${sample['a*'].toFixed(2)}  b*: ${sample['b*'].toFixed(2)}`);
-              }
-              showTooltip(evt.clientX, evt.clientY, tooltipLines.join('\n'));
-            });
-            chip.addEventListener('mouseleave', hideTooltip);
-            svg.appendChild(chip);
-          }
           tri.addEventListener('mousemove', evt => {
             const tooltipLines = [];
             tooltipLines.push(sample['Name']);
@@ -1046,12 +982,11 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
           // vertically according to the sample’s position in the list to
           // reduce overlap.
           const label = document.createElementNS('http://www.w3.org/2000/svg','text');
-          const labelX = x + size + (sample.hex ? 8 : 0) + 6;
+          const labelX = x + size + 6;
           const idx = selectedList.findIndex(s => s.id === sample.id);
           const labelY = y + 4 + idx * 12;
           label.setAttribute('x', labelX);
           label.setAttribute('y', labelY);
-          label.setAttribute('class','label-export');
           label.textContent = `${sample['Name']} (${isFinite(usedVal) ? usedVal.toFixed(1) : ''})`;
           svg.appendChild(label);
         });
@@ -1146,8 +1081,8 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         plotGroup.appendChild(circ);
         const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
         lbl.setAttribute('x', originX + rad);
-        lbl.setAttribute('y', originY - 4);
-        lbl.setAttribute('font-size','10');
+        lbl.setAttribute('y', originY - 6);
+        lbl.setAttribute('font-size','14');
         lbl.textContent = rVal;
         plotGroup.appendChild(lbl);
       });
@@ -1195,22 +1130,23 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         if (v !== 0) {
           const lblX = document.createElementNS('http://www.w3.org/2000/svg','text');
           lblX.setAttribute('x', x);
-          lblX.setAttribute('y', originY + 12);
-          lblX.setAttribute('font-size','9');
+          lblX.setAttribute('y', originY + 16);
+          lblX.setAttribute('font-size','14');
           lblX.setAttribute('text-anchor','middle');
           lblX.textContent = v;
           svg.appendChild(lblX);
           const lblY = document.createElementNS('http://www.w3.org/2000/svg','text');
           lblY.setAttribute('x', originX - 3);
-          lblY.setAttribute('y', y + 3);
-          lblY.setAttribute('font-size','9');
+          lblY.setAttribute('y', y + 5);
+          lblY.setAttribute('font-size','14');
           lblY.setAttribute('text-anchor','end');
           lblY.textContent = v;
           svg.appendChild(lblY);
         }
       }
       // plot samples.  Build a list of selected samples to compute label
-      // offsets.  Each label shows the sample name and L*a*b* values.
+      // offsets. Each label shows the sample name
+      // and L*a*b* values.
       const selectedAB = filteredSamples().filter(s => state.selected.has(s.id));
       selectedAB.forEach(sample => {
         const a = sample['a*'];
@@ -1218,19 +1154,14 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         if (!isFinite(a) || !isFinite(b)) return;
         const x = originX + (a / AB_RANGE) * maxRadius;
         const y = originY - (b / AB_RANGE) * maxRadius;
-        const pt = document.createElementNS('http://www.w3.org/2000/svg','circle');
-        pt.setAttribute('cx', x);
-        pt.setAttribute('cy', y);
-        pt.setAttribute('r', 5);
-        // fill with actual Lab colour if available, fallback to palette
-        if (sample.hex) {
-          pt.setAttribute('fill', sample.hex);
-        } else {
-          pt.setAttribute('fill', getSampleColor(sample));
-        }
-        pt.setAttribute('stroke', 'currentColor');
-        pt.setAttribute('stroke-width', '0.5');
-        pt.addEventListener('mousemove', evt => {
+        const size = 5;
+        const tri = document.createElementNS('http://www.w3.org/2000/svg','polygon');
+        tri.setAttribute('points', `${x},${y-size} ${x-size},${y+size} ${x+size},${y+size}`);
+        // fill using palette colour to match other charts
+        tri.setAttribute('fill', getSampleColor(sample));
+        tri.setAttribute('stroke', 'currentColor');
+        tri.setAttribute('stroke-width', '0.5');
+        tri.addEventListener('mousemove', evt => {
           const lines = [];
           lines.push(sample['Name']);
           if (isFinite(sample['L*']) && isFinite(sample['a*']) && isFinite(sample['b*'])) {
@@ -1238,8 +1169,8 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
           }
           showTooltip(evt.clientX, evt.clientY, lines.join('\n'));
         });
-        pt.addEventListener('mouseleave', hideTooltip);
-        plotGroup.appendChild(pt);
+        tri.addEventListener('mouseleave', hideTooltip);
+        plotGroup.appendChild(tri);
         // Label for the sample.  When labels are enabled or exporting,
         // this text is visible.  Offset vertically based on the sample
         // index to reduce overlap, and include L*, a* and b* values.
@@ -1249,7 +1180,6 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         const lblY = y - 6 - idx * 12;
         lbl.setAttribute('x', lblX);
         lbl.setAttribute('y', lblY);
-        lbl.setAttribute('class','label-export');
         let text = `${sample['Name']}`;
         if (isFinite(sample['L*']) && isFinite(sample['a*']) && isFinite(sample['b*'])) {
           text += ` (L*: ${sample['L*'].toFixed(2)}, a*: ${sample['a*'].toFixed(2)}, b*: ${sample['b*'].toFixed(2)})`;
@@ -1257,6 +1187,7 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         lbl.textContent = text;
         plotGroup.appendChild(lbl);
       });
+
     }
     function drawL() {
       const svg = document.getElementById('lChart');
@@ -1319,8 +1250,8 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         svg.appendChild(tick);
         const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
         lbl.setAttribute('x', axisX - 6);
-        lbl.setAttribute('y', y + 3);
-        lbl.setAttribute('font-size','9');
+        lbl.setAttribute('y', y + 5);
+        lbl.setAttribute('font-size','14');
         lbl.setAttribute('text-anchor','end');
         lbl.textContent = v;
         svg.appendChild(lbl);
@@ -1339,11 +1270,8 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         const markerX = axisX + barWidth + 10;
         const tri = document.createElementNS('http://www.w3.org/2000/svg','polygon');
         tri.setAttribute('points', `${markerX},${yPos} ${markerX+size},${yPos-size} ${markerX+size},${yPos+size}`);
-        if (sample.hex) {
-          tri.setAttribute('fill', sample.hex);
-        } else {
-          tri.setAttribute('fill', getSampleColor(sample));
-        }
+        // fill using palette colour to match other charts
+        tri.setAttribute('fill', getSampleColor(sample));
         tri.setAttribute('stroke','currentColor');
         tri.setAttribute('stroke-width','0.5');
         tri.addEventListener('mousemove', evt => {
@@ -1358,7 +1286,6 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         const idx = selectedL.findIndex(s => s.id === sample.id);
         lblExp.setAttribute('x', markerX + size + 4 + idx * 70);
         lblExp.setAttribute('y', yPos + 3);
-        lblExp.setAttribute('class','label-export');
         lblExp.textContent = `${sample['Name']} (${l.toFixed(2)})`;
         svg.appendChild(lblExp);
       });
@@ -1418,8 +1345,8 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         svg.appendChild(tick);
         const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
         lbl.setAttribute('x', x);
-        lbl.setAttribute('y', height - padding.bottom + 18);
-        lbl.setAttribute('font-size','9');
+        lbl.setAttribute('y', height - padding.bottom + 24);
+        lbl.setAttribute('font-size','14');
         lbl.setAttribute('text-anchor','middle');
         lbl.textContent = w;
         svg.appendChild(lbl);
@@ -1446,8 +1373,8 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         svg.appendChild(tick);
         const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
         lbl.setAttribute('x', padding.left - 6);
-        lbl.setAttribute('y', y + 3);
-        lbl.setAttribute('font-size','9');
+        lbl.setAttribute('y', y + 5);
+        lbl.setAttribute('font-size','14');
         lbl.setAttribute('text-anchor','end');
         lbl.textContent = (state.logScale ? yVal.toFixed(2) : yVal.toFixed(3));
         svg.appendChild(lbl);
@@ -1457,7 +1384,7 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
       yTitle.setAttribute('transform', `rotate(-90 ${padding.left - 40},${(padding.top + height - padding.bottom)/2})`);
       yTitle.setAttribute('x', padding.left - 40);
       yTitle.setAttribute('y', (padding.top + height - padding.bottom)/2);
-      yTitle.setAttribute('font-size','10');
+      yTitle.setAttribute('font-size','16');
       yTitle.setAttribute('text-anchor','middle');
       yTitle.textContent = state.logScale ? 'log10(A)' : 'Absorbance';
       svg.appendChild(yTitle);
@@ -1465,7 +1392,7 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
       const xTitle = document.createElementNS('http://www.w3.org/2000/svg','text');
       xTitle.setAttribute('x', (padding.left + width - padding.right)/2);
       xTitle.setAttribute('y', height - bandHeight - 5);
-      xTitle.setAttribute('font-size','10');
+      xTitle.setAttribute('font-size','16');
       xTitle.setAttribute('text-anchor','middle');
       xTitle.textContent = 'Wavelength (nm)';
       svg.appendChild(xTitle);
@@ -1513,7 +1440,7 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
       const bandLabel = document.createElementNS('http://www.w3.org/2000/svg','text');
       bandLabel.setAttribute('x', padding.left);
       bandLabel.setAttribute('y', height - bandHeight - 2);
-      bandLabel.setAttribute('font-size','9');
+      bandLabel.setAttribute('font-size','14');
       bandLabel.setAttribute('text-anchor','start');
       bandLabel.textContent = 'Absorbed λ colour';
       svg.appendChild(bandLabel);
@@ -1620,11 +1547,11 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
           const ly = toY(ys[lastIndex]) - 6 - sIdx * 12;
           label.setAttribute('x', lx);
           label.setAttribute('y', ly);
-          label.setAttribute('class','label-export');
           label.textContent = sample['Name'];
           svg.appendChild(label);
         }
       });
+
     }
     function drawDetails() {
       const div = document.getElementById('detailsCard');
@@ -1700,12 +1627,7 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
       }
     }
     function getSampleColor(sample) {
-      const mode = state.colorBy;
-      let key;
-      if (mode === 'sample') key = sample.id;
-      else if (mode === 'illuminant') key = sample.Illuminant || sample.id;
-      else if (mode === 'average') key = sample['Average'] || sample.id;
-      return hashColor(key);
+      return sample.color || COLOR_OPTIONS[0];
     }
     function drawAll() {
       updateTable();
@@ -1754,14 +1676,13 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
     });
     document.getElementById('fileInput').addEventListener('change', async (ev) => {
       const files = Array.from(ev.target.files);
-      // reset current samples and selection on new load
-      state.samples = [];
-      state.selected = new Set();
       let allWarnings = [];
       for (const file of files) {
         const text = await file.text();
         const {samples, warnings} = parseCSV(text);
+        assignDefaultColors(samples);
         state.samples.push(...samples);
+        samples.forEach(s => state.selected.add(s.id));
         if (warnings && warnings.length) allWarnings.push(...warnings);
       }
       updateWarning(allWarnings);
@@ -1783,14 +1704,13 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
       ev.preventDefault();
       ev.currentTarget.classList.remove('dragover');
       const files = Array.from(ev.dataTransfer.files).filter(f => /\.csv$/i.test(f.name));
-      // reset samples and selection on new load via drop
-      state.samples = [];
-      state.selected = new Set();
       let allWarnings = [];
       for (const file of files) {
         const text = await file.text();
         const {samples, warnings} = parseCSV(text);
+        assignDefaultColors(samples);
         state.samples.push(...samples);
+        samples.forEach(s => state.selected.add(s.id));
         if (warnings && warnings.length) allWarnings.push(...warnings);
       }
       updateWarning(allWarnings);
@@ -1804,11 +1724,6 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
         if (checked) state.selected.add(sample.id);
         else state.selected.delete(sample.id);
       });
-      persistState();
-      scheduleDraw();
-    });
-    document.getElementById('colorBy').addEventListener('change', (ev) => {
-      state.colorBy = ev.target.value;
       persistState();
       scheduleDraw();
     });
@@ -1879,35 +1794,6 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
       scheduleDraw();
       drawDetails();
     });
-    // Export PNG button
-    document.getElementById('exportPng').addEventListener('click', () => {
-      const timeStamp = new Date().toISOString().replace(/[:.]/g,'-');
-      // Add 'exporting' class to the document element to reveal export-only
-      // labels (like sample names on the AB plot). These labels are hidden on
-      // screen but should be visible in the exported images. Remove the
-      // class once all PNGs have been generated.
-      document.documentElement.classList.add('exporting');
-      // Perform exports asynchronously to allow the DOM to update. Use
-      // requestAnimationFrame to ensure the export labels become visible
-      // before serialising the SVG.
-      requestAnimationFrame(() => {
-        if (state.activeTab === 'scales') {
-          exportSVGToPNG(document.getElementById('scalesChart'), `scales_${timeStamp}.png`);
-        } else if (state.activeTab === 'cielab') {
-          exportSVGToPNG(document.getElementById('abChart'), `cielab_ab_${timeStamp}.png`);
-          exportSVGToPNG(document.getElementById('lChart'), `cielab_L_${timeStamp}.png`);
-        } else if (state.activeTab === 'spectrum') {
-          exportSVGToPNG(document.getElementById('spectrumChart'), `spectrum_${timeStamp}.png`);
-        }
-        // Remove exporting class after a short delay to avoid leaving
-        // labels visible on the page. The timeout allows the browser
-        // enough time to initiate the downloads.
-        setTimeout(() => {
-          document.documentElement.classList.remove('exporting');
-        }, 200);
-      });
-    });
-
     // Dark mode toggle
     const themeToggle = document.getElementById('themeToggle');
     themeToggle.addEventListener('click', () => {
@@ -1930,24 +1816,6 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
     });
 
     // Toggle persistent display of labels.  When enabled, a CSS class
-    // (.show-labels) is applied to the root element, which causes
-    // export labels to be visible at all times.  Persist the setting
-    // and update the button title accordingly.
-    const labelsToggle = document.getElementById('labelsToggle');
-    function updateLabelsToggleUI() {
-      labelsToggle.title = state.showLabels ? 'Hide labels' : 'Show labels';
-    }
-    labelsToggle.addEventListener('click', () => {
-      state.showLabels = !state.showLabels;
-      const root = document.documentElement;
-      if (state.showLabels) {
-        root.classList.add('show-labels');
-      } else {
-        root.classList.remove('show-labels');
-      }
-      updateLabelsToggleUI();
-      persistState();
-    });
     // Export CSV button
     document.getElementById('exportCsv').addEventListener('click', () => {
       const rows = filteredSamples().filter(s => state.selected.has(s.id));
@@ -1991,48 +1859,6 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
       const ts = new Date().toISOString().replace(/[:.]/g,'-');
       download(`samples_${ts}.csv`, csvText);
     });
-    // Paste load button
-    document.getElementById('loadPaste').addEventListener('click', () => {
-      const text = document.getElementById('paste-area').value;
-      // reset samples and selection before loading pasted CSV
-      state.samples = [];
-      state.selected = new Set();
-      const {samples, warnings} = parseCSV(text);
-      state.samples.push(...samples);
-      updateWarning(warnings);
-      updateIlluminantOptions();
-      persistState();
-      scheduleDraw();
-    });
-    // Fake generator
-    document.getElementById('generateFake').addEventListener('click', () => {
-      // generate two fake samples for testing overlay
-      const base = [
-        {id:'fake1', 'No.':'F001', Name:'Fake A', Date:'2025/09/04', Time:'12:00:00', Average:'A/2', Illuminant:'D65/10', Attachment:'None', 'L*':70, 'a*':20, 'b*':40, 'Hazen(APHA)':200, 'Gardner':5, 'Saybolt':5, 'ASTM':3, 'Pt-Co':100, spectrum:[]},
-        {id:'fake2', 'No.':'F002', Name:'Fake B', Date:'2025/09/04', Time:'12:01:00', Average:'A/2', Illuminant:'C/2', Attachment:'None', 'L*':50, 'a*':-30, 'b*':10, 'Hazen(APHA)':50, 'Gardner':2, 'Saybolt':10, 'ASTM':1, 'Pt-Co':60, spectrum:[]}
-      ];
-      // create spectra 400-700 with simple shapes
-      for (const s of base) {
-        for (let wl=400; wl<=700; wl+=10) {
-          // Generate two different gaussian-like spectra for the two fakes
-          const val = s === base[0]
-            ? Math.exp(-Math.pow((wl - 500) / 60, 2))
-            : Math.exp(-Math.pow((wl - 600) / 40, 2));
-          s.spectrum.push({ wavelength: wl, absorbance: val });
-        }
-        // Precompute C* and hue, though not displayed; might be useful
-        s.Cstar = Math.hypot(s['a*'], s['b*']);
-        s.hueDeg = (Math.atan2(s['b*'], s['a*']) * 180 / Math.PI + 360) % 360;
-        // Compute sRGB and hex so the fake samples also display actual colours
-        const rgb = labToSRGB({ L: s['L*'], a: s['a*'], b: s['b*'] });
-        s.srgb = rgb;
-        s.hex = srgbToHex(rgb);
-      }
-      state.samples.push(...base);
-      updateIlluminantOptions();
-      persistState();
-      scheduleDraw();
-    });
     // Initialize initial render
     // Apply persisted theme before first render to avoid flash. We remove any
     // existing theme classes and add either .dark or .light to explicitly
@@ -2041,11 +1867,6 @@ M072,HG4N JF-011         ,2025/09/03,16:06:35,Avrg/03,C/2,None,  92.26,  -4.92, 
     document.documentElement.classList.remove('dark', 'light');
     document.documentElement.classList.add(state.theme);
 
-    // Apply persistent label visibility preference on load
-    if (state.showLabels) {
-      document.documentElement.classList.add('show-labels');
-    }
-    updateLabelsToggleUI();
     updateIlluminantOptions();
     updateTable();
     if (state.activeTab === 'scales') drawScales();
