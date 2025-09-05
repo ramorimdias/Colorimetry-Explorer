@@ -427,8 +427,27 @@
       '#911eb4','#46f0f0','#f032e6','#d2f53c','#fabebe',
       '#008080','#e6beff','#aa6e28','#800000','#aaffc3'
     ];
-    function download(filename, text) {
-      const blob = new Blob([text], {type:'text/plain'});
+    async function download(filename, text) {
+      if (window.showSaveFilePicker) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: filename,
+            types: [{
+              description: 'CSV Files',
+              accept: {'text/csv': ['.csv']}
+            }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(text);
+          await writable.close();
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            console.error('Error saving file', err);
+          }
+        }
+        return;
+      }
+      const blob = new Blob([text], {type:'text/csv'});
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
