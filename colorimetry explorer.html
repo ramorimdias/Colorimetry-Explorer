@@ -1340,7 +1340,7 @@
       // Extra bottom space for the wavelength color band and its label
       const bandHeight = 18;
       // Increase top padding to prevent curves from touching the top of the viewport
-      const padding = {top:30,right:60,bottom:50 + bandHeight,left:60};
+      const padding = {top:30,right:60,bottom:50 + bandHeight,left:90};
       const fontSize = parseFloat(getComputedStyle(document.body).fontSize);
       const titleSize = fontSize * 1.2;
       const samplesToPlot = filteredSamples().filter(s => state.selected.has(s.id));
@@ -1426,8 +1426,9 @@
       }
       // y axis label
       const yTitle = document.createElementNS('http://www.w3.org/2000/svg','text');
-      yTitle.setAttribute('transform', `rotate(-90 ${padding.left - 40},${(padding.top + height - padding.bottom)/2})`);
-      yTitle.setAttribute('x', padding.left - 40);
+      const yTitleX = padding.left - 20;
+      yTitle.setAttribute('transform', `rotate(-90 ${yTitleX},${(padding.top + height - padding.bottom)/2})`);
+      yTitle.setAttribute('x', yTitleX);
       yTitle.setAttribute('y', (padding.top + height - padding.bottom)/2);
       yTitle.setAttribute('font-size', titleSize);
       yTitle.setAttribute('text-anchor','middle');
