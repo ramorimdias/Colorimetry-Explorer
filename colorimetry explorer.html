@@ -224,7 +224,8 @@
     }
     svg.chart text {
       fill: var(--fg);
-      font-size: 14px;
+      font-size: 1em;
+      font-family: inherit;
     }
 
     /* When the container has the hide-main class, hide the right hand
@@ -347,8 +348,9 @@
         <div style="margin-bottom:0.5rem">
           <label><input type="checkbox" id="logScale"> log10(A)</label>
           <label style="margin-left:1rem"><input type="checkbox" id="smoothToggle"> Smooth</label>
-          <label style="margin-left:0.5rem">Window:<input type="range" id="smoothWindow" min="3" max="15" step="2" value="5" style="width:100px" /></label>
+          <label style="margin-left:0.5rem">Level:<input type="range" id="smoothWindow" min="3" max="15" step="2" value="5" style="width:100px" /></label>
           <label style="margin-left:1rem"><input type="checkbox" id="shadeArea"> Shade area</label>
+          <label style="margin-left:1rem">Y max:<input type="number" id="yMaxInput" min="0" step="0.1" style="width:60px"></label>
         </div>
         <svg class="chart" id="spectrumChart" aria-label="Spectrum chart"></svg>
       </div>
@@ -396,6 +398,7 @@
       smooth: false,
       smoothWindow: 5,
       shadeArea: false,
+      yMax: null,
       groupByIlluminant: false,
       // per‑session filters and search text (not persisted)
       illuminantFilter: '',
@@ -410,7 +413,7 @@
     try {
       const stored = JSON.parse(localStorage.getItem('colorimetryState') || '{}');
       // Only assign known persisted keys to avoid clobbering arrays/sets
-      ['activeTab','logScale','smooth','smoothWindow','shadeArea','groupByIlluminant','theme'].forEach(key => {
+      ['activeTab','logScale','smooth','smoothWindow','shadeArea','yMax','groupByIlluminant','theme'].forEach(key => {
         if (stored.hasOwnProperty(key)) state[key] = stored[key];
       });
     } catch (e) {
@@ -426,6 +429,7 @@
         smooth: state.smooth,
         smoothWindow: state.smoothWindow,
         shadeArea: state.shadeArea,
+        yMax: state.yMax,
         groupByIlluminant: state.groupByIlluminant,
         theme: state.theme,
       };
@@ -524,49 +528,109 @@
 
     // ================================
     // Color conversions
-    // Convert CIELAB values to XYZ using the D65 white point (no chromatic adaptation)
-    function labToXYZ(lab) {
-      // input: {L,a,b}
-      const {L,a,b} = lab;
-      let y = (L + 16) / 116;
-      let x = y + a / 500;
-      let z = y - b / 200;
-      // helper to convert from f to linear component
-      const pivot = v => {
-        const v3 = v * v * v;
-        return v3 > 0.008856 ? v3 : (v - 16/116)/7.787;
-      };
-      x = pivot(x);
-      y = pivot(y);
-      z = pivot(z);
-      // D65 reference white
-      const X = x * 95.047;
-      const Y = y * 100.000;
-      const Z = z * 108.883;
-      return [X,Y,Z];
+    // White points (XYZ, normalized Y=100)
+    const WP = {
+      D65_2:  [95.047, 100.000, 108.883],
+      D65_10: [94.811, 100.000, 107.304],
+      C_2:    [98.074, 100.000, 118.232],
+      C_10:   [97.285, 100.000, 116.145],
+    };
+    // Bradford CAT matrices
+    const M = [
+      [ 0.8951, 0.2664, -0.1614],
+      [-0.7502, 1.7135,  0.0367],
+      [ 0.0389,-0.0685,  1.0296]
+    ];
+    const Minv = [
+      [ 0.9869929, -0.1470543, 0.1599627],
+      [ 0.4323053,  0.5183603, 0.0492912],
+      [-0.0085287,  0.0400428, 0.9684867]
+    ];
+    function mul3x3v(m, v){
+      return [
+        m[0][0]*v[0] + m[0][1]*v[1] + m[0][2]*v[2],
+        m[1][0]*v[0] + m[1][1]*v[1] + m[1][2]*v[2],
+        m[2][0]*v[0] + m[2][1]*v[1] + m[2][2]*v[2],
+      ];
     }
-    // Convert XYZ to linear sRGB then to gamma‑corrected sRGB
-    function xyzToSRGB(xyz) {
-      let [X,Y,Z] = xyz;
-      // normalize
-      X /= 100;
-      Y /= 100;
-      Z /= 100;
-      // linear RGB
-      let r = 3.2406*X + (-1.5372)*Y + (-0.4986)*Z;
-      let g = (-0.9689)*X + 1.8758*Y + 0.0415*Z;
-      let b = 0.0557*X + (-0.2040)*Y + 1.0570*Z;
-      // clamp linear values to 0–1 range for out‑of‑gamut soft clipping
-      r = Math.min(Math.max(r, 0), 1);
-      g = Math.min(Math.max(g, 0), 1);
-      b = Math.min(Math.max(b, 0), 1);
-      const convert = c => c <= 0.0031308 ? 12.92*c : 1.055*Math.pow(c,1/2.4) - 0.055;
-      return [convert(r), convert(g), convert(b)];
+    function divVec(a,b){ return [a[0]/b[0], a[1]/b[1], a[2]/b[2]]; }
+    function mulVec(a,b){ return [a[0]*b[0], a[1]*b[1], a[2]*b[2]]; }
+    function bradfordAdaptXYZ(XYZ, srcWP, dstWP){
+      const srcLMS = mul3x3v(M, srcWP);
+      const dstLMS = mul3x3v(M, dstWP);
+      const scale = divVec(dstLMS, srcLMS);
+      const LMS = mul3x3v(M, XYZ);
+      const LMSa = mulVec(LMS, scale);
+      return mul3x3v(Minv, LMSa);
+    }
+    // Lab -> XYZ (for given white)
+    function labToXyz(L, a, b, whiteXYZ){
+      const fy = (L + 16) / 116;
+      const fx = fy + a / 500;
+      const fz = fy - b / 200;
+      const epsilon = 216/24389;
+      const kappa   = 24389/27;
+      const fx3 = fx*fx*fx, fy3 = fy*fy*fy, fz3 = fz*fz*fz;
+      const xr = (fx3 > epsilon) ? fx3 : (116*fx - 16)/kappa;
+      const yr = (L > kappa*epsilon) ? Math.pow((L+16)/116, 3) : L/kappa;
+      const zr = (fz3 > epsilon) ? fz3 : (116*fz - 16)/kappa;
+      return [xr*whiteXYZ[0], yr*whiteXYZ[1], zr*whiteXYZ[2]];
+    }
+    // XYZ (D65) -> linear sRGB, then compand
+    function xyzD65ToLinSrgb(X,Y,Z){
+      const r =  3.2406*X/100 + (-1.5372)*Y/100 + (-0.4986)*Z/100;
+      const g = -0.9689*X/100 +  1.8758*Y/100 +  0.0415*Z/100;
+      const b =  0.0557*X/100 + (-0.2040)*Y/100 +  1.0570*Z/100;
+      return [r,g,b];
+    }
+    function lin2srgb(u){
+      return (u <= 0.0031308) ? 12.92*u : 1.055*Math.pow(u, 1/2.4) - 0.055;
+    }
+    function inGamut(rgb){
+      return rgb[0]>=0 && rgb[1]>=0 && rgb[2]>=0 && rgb[0]<=1 && rgb[1]<=1 && rgb[2]<=1;
+    }
+    // Try to preserve hue by reducing chroma until inside gamut
+    function labToDisplaySRGB(L, a, b, whiteTag="D65_2"){
+      const srcWP = WP[whiteTag];
+      let XYZ = labToXyz(L, a, b, srcWP);
+      const XYZd65 = (whiteTag.startsWith("D65")) ? XYZ : bradfordAdaptXYZ(XYZ, srcWP, WP.D65_2);
+      let lin = xyzD65ToLinSrgb(...XYZd65);
+      if(!inGamut(lin)){
+        let lo=0, hi=1;
+        for(let i=0;i<16;i++){
+          const t = (lo+hi)/2;
+          const XYZt = labToXyz(L, a*t, b*t, srcWP);
+          const XYZd = (whiteTag.startsWith("D65")) ? XYZt : bradfordAdaptXYZ(XYZt, srcWP, WP.D65_2);
+          const lint = xyzD65ToLinSrgb(...XYZd);
+          if(inGamut(lint)){ lin=lint; lo=t; } else { hi=t; }
+        }
+      }
+      return lin.map(lin2srgb).map(v => Math.round(255*Math.min(1,Math.max(0,v))));
+    }
+    // Draw a*b* slice at fixed L*
+    function drawLabABPlane(canvas, Lstar=70, aMin=-160, aMax=160, bMin=-160, bMax=160, whiteTag="D65_2"){
+      const ctx = canvas.getContext('2d', { willReadFrequently: false });
+      const {width:w, height:h} = canvas;
+      const img = ctx.createImageData(w,h);
+      const data = img.data;
+      for(let y=0; y<h; y++){
+        const b = bMax + (bMin - bMax) * (y/(h-1));
+        for(let x=0; x<w; x++){
+          const a = aMin + (aMax - aMin) * (x/(w-1));
+          const [R,G,B] = labToDisplaySRGB(Lstar, a, b, whiteTag);
+          const idx = 4*(y*w + x);
+          data[idx]   = R;
+          data[idx+1] = G;
+          data[idx+2] = B;
+          data[idx+3] = 255;
+        }
+      }
+      ctx.putImageData(img, 0, 0);
     }
     // Convert Lab directly to sRGB array (0–1)
-    function labToSRGB(lab) {
-      const xyz = labToXYZ(lab);
-      return xyzToSRGB(xyz);
+    function labToSRGB(lab, whiteTag="D65_2") {
+      const rgb = labToDisplaySRGB(lab.L, lab.a, lab.b, whiteTag);
+      return rgb.map(v => v/255);
     }
     // Convert sRGB array to CSS hex string
     function srgbToHex(rgb) {
@@ -917,6 +981,8 @@
       const height = svg.clientHeight;
       const padding = {top:20,right:40,bottom:30,left:40};
       const chartHeight = (height - padding.top - padding.bottom) / 3;
+      const fontSize = parseFloat(getComputedStyle(document.body).fontSize);
+      const titleSize = fontSize * 1.2;
       // Set up a defs container for gradients
       const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
       svg.appendChild(defs);
@@ -984,7 +1050,7 @@
           lbl.setAttribute('x', x);
           lbl.setAttribute('y', axisY + 16);
           lbl.setAttribute('text-anchor', 'middle');
-          lbl.setAttribute('font-size', '14');
+          lbl.setAttribute('font-size', fontSize);
           lbl.textContent = v;
           svg.appendChild(lbl);
         }
@@ -992,7 +1058,7 @@
         const title = document.createElementNS('http://www.w3.org/2000/svg','text');
         title.setAttribute('x', padding.left);
         title.setAttribute('y', y0 + 16);
-        title.setAttribute('font-size','16');
+        title.setAttribute('font-size', titleSize);
         title.setAttribute('font-weight','bold');
         title.textContent = sc.name;
         svg.appendChild(title);
@@ -1036,6 +1102,7 @@
       const originX = width/2;
       const originY = height/2;
       const maxRadius = Math.min(width, height)/2 - padding;
+      const fontSize = parseFloat(getComputedStyle(document.body).fontSize);
       // The AB plane now covers values from -140 to +140 instead of ±100.
       const AB_RANGE = 140;
       // Clip path for circular region
@@ -1058,40 +1125,13 @@
       plotGroup.setAttribute('clip-path', `url(#${clipId})`);
       svg.appendChild(plotGroup);
       // Draw a colour map within the circle representing mixtures of a* and b*.
-      // We sample a regular grid in Lab space (L fixed at 60) and convert
-      // each point to sRGB. Points outside the unit circle (|C*|>100) are
-      // left transparent. The resulting image is clipped by the circular
-      // path above.
+      // Generate a canvas using true CIELAB→sRGB conversion and embed it as an image.
       (function() {
-        const res = 120; // resolution of the colour map grid
+        const res = 200; // resolution of the colour map grid
         const canvas = document.createElement('canvas');
         canvas.width = res;
         canvas.height = res;
-        const ctx = canvas.getContext('2d');
-        const imgData = ctx.createImageData(res, res);
-        const data = imgData.data;
-        const AB_MAX = 140;
-        for (let j = 0; j < res; j++) {
-          // b* coordinate: +AB_MAX at top, -AB_MAX at bottom
-          const bVal = ((res - 1 - j) / (res - 1) * 2 - 1) * AB_MAX;
-          for (let i = 0; i < res; i++) {
-            // a* coordinate: -AB_MAX at left, +AB_MAX at right
-            const aVal = (i / (res - 1) * 2 - 1) * AB_MAX;
-            const idx = (j * res + i) * 4;
-            // Skip points outside the circle of radius AB_MAX
-            if (Math.hypot(aVal, bVal) > AB_MAX) {
-              data[idx + 3] = 0; // transparent
-              continue;
-            }
-            // Convert Lab to sRGB for a fixed lightness (L* = 60)
-            const rgb = labToSRGB({ L: 60, a: aVal, b: bVal });
-            data[idx] = Math.round(rgb[0] * 255);
-            data[idx + 1] = Math.round(rgb[1] * 255);
-            data[idx + 2] = Math.round(rgb[2] * 255);
-            data[idx + 3] = 255;
-          }
-        }
-        ctx.putImageData(imgData, 0, 0);
+        drawLabABPlane(canvas, 70, -AB_RANGE, AB_RANGE, -AB_RANGE, AB_RANGE, 'D65_2');
         const url = canvas.toDataURL();
         const imgEl = document.createElementNS('http://www.w3.org/2000/svg', 'image');
         imgEl.setAttributeNS('http://www.w3.org/1999/xlink', 'href', url);
@@ -1114,12 +1154,6 @@
         circ.setAttribute('stroke','var(--border)');
         circ.setAttribute('stroke-dasharray','2 2');
         plotGroup.appendChild(circ);
-        const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
-        lbl.setAttribute('x', originX + rad);
-        lbl.setAttribute('y', originY - 6);
-        lbl.setAttribute('font-size','14');
-        lbl.textContent = rVal;
-        plotGroup.appendChild(lbl);
       });
       // axes: draw them on the main svg, not inside the clipped group, so
       // they appear across the full chart.  Without this change the
@@ -1166,14 +1200,14 @@
           const lblX = document.createElementNS('http://www.w3.org/2000/svg','text');
           lblX.setAttribute('x', x);
           lblX.setAttribute('y', originY + 16);
-          lblX.setAttribute('font-size','14');
+          lblX.setAttribute('font-size', fontSize);
           lblX.setAttribute('text-anchor','middle');
           lblX.textContent = v;
           svg.appendChild(lblX);
           const lblY = document.createElementNS('http://www.w3.org/2000/svg','text');
           lblY.setAttribute('x', originX - 3);
           lblY.setAttribute('y', y + 5);
-          lblY.setAttribute('font-size','14');
+          lblY.setAttribute('font-size', fontSize);
           lblY.setAttribute('text-anchor','end');
           lblY.textContent = v;
           svg.appendChild(lblY);
@@ -1214,6 +1248,7 @@
       const width = svg.clientWidth;
       const height = svg.clientHeight;
       const padding = {top:20,right:20,bottom:20,left:30};
+      const fontSize = parseFloat(getComputedStyle(document.body).fontSize);
       // vertical axis spans 0–100. Draw a vertical gradient next to the axis
       // to visually indicate the progression from light (top) to dark
       // (bottom). Ticks and labels are drawn on the axis. The axis
@@ -1270,7 +1305,7 @@
         const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
         lbl.setAttribute('x', axisX - 6);
         lbl.setAttribute('y', y + 5);
-        lbl.setAttribute('font-size','14');
+        lbl.setAttribute('font-size', fontSize);
         lbl.setAttribute('text-anchor','end');
         lbl.textContent = v;
         svg.appendChild(lbl);
@@ -1305,7 +1340,9 @@
       // Extra bottom space for the wavelength color band and its label
       const bandHeight = 18;
       // Increase top padding to prevent curves from touching the top of the viewport
-      const padding = {top:30,right:60,bottom:50 + bandHeight,left:50};
+      const padding = {top:30,right:60,bottom:50 + bandHeight,left:90};
+      const fontSize = parseFloat(getComputedStyle(document.body).fontSize);
+      const titleSize = fontSize * 1.2;
       const samplesToPlot = filteredSamples().filter(s => state.selected.has(s.id));
       if (samplesToPlot.length === 0) return;
       // Determine x range (wavelength)
@@ -1322,13 +1359,14 @@
         }).filter(v => isFinite(v));
         allYs.push(...values);
       });
-      let minY = Math.min(...allYs);
       let maxY = Math.max(...allYs);
-      if (minY === maxY) {
-        minY -= 0.1;
-        maxY += 0.1;
+      if (state.yMax !== null && isFinite(state.yMax) && state.yMax > 0) {
+        maxY = state.yMax;
       }
-      // For log scale, adjust minY and maxY slightly
+      let minY = 0;
+      if (maxY <= minY) {
+        maxY = minY + 1;
+      }
       const toX = w => padding.left + (w - minW)/(maxW - minW) * (width - padding.left - padding.right);
       const toY = y => padding.top + (maxY - y)/(maxY - minY) * (height - padding.top - padding.bottom);
       // axes
@@ -1353,7 +1391,7 @@
         const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
         lbl.setAttribute('x', x);
         lbl.setAttribute('y', height - padding.bottom + 24);
-        lbl.setAttribute('font-size','14');
+        lbl.setAttribute('font-size', fontSize);
         lbl.setAttribute('text-anchor','middle');
         lbl.textContent = w;
         svg.appendChild(lbl);
@@ -1381,17 +1419,18 @@
         const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
         lbl.setAttribute('x', padding.left - 6);
         lbl.setAttribute('y', y + 5);
-        lbl.setAttribute('font-size','14');
+        lbl.setAttribute('font-size', fontSize);
         lbl.setAttribute('text-anchor','end');
         lbl.textContent = (state.logScale ? yVal.toFixed(2) : yVal.toFixed(3));
         svg.appendChild(lbl);
       }
       // y axis label
       const yTitle = document.createElementNS('http://www.w3.org/2000/svg','text');
-      yTitle.setAttribute('transform', `rotate(-90 ${padding.left - 40},${(padding.top + height - padding.bottom)/2})`);
-      yTitle.setAttribute('x', padding.left - 40);
+      const yTitleX = padding.left - 20;
+      yTitle.setAttribute('transform', `rotate(-90 ${yTitleX},${(padding.top + height - padding.bottom)/2})`);
+      yTitle.setAttribute('x', yTitleX);
       yTitle.setAttribute('y', (padding.top + height - padding.bottom)/2);
-      yTitle.setAttribute('font-size','16');
+      yTitle.setAttribute('font-size', titleSize);
       yTitle.setAttribute('text-anchor','middle');
       yTitle.textContent = state.logScale ? 'log10(A)' : 'Absorbance';
       svg.appendChild(yTitle);
@@ -1399,7 +1438,7 @@
       const xTitle = document.createElementNS('http://www.w3.org/2000/svg','text');
       xTitle.setAttribute('x', (padding.left + width - padding.right)/2);
       xTitle.setAttribute('y', height - bandHeight - 5);
-      xTitle.setAttribute('font-size','16');
+      xTitle.setAttribute('font-size', titleSize);
       xTitle.setAttribute('text-anchor','middle');
       xTitle.textContent = 'Wavelength (nm)';
       svg.appendChild(xTitle);
@@ -1447,7 +1486,7 @@
       const bandLabel = document.createElementNS('http://www.w3.org/2000/svg','text');
       bandLabel.setAttribute('x', padding.left);
       bandLabel.setAttribute('y', height - bandHeight - 2);
-      bandLabel.setAttribute('font-size','14');
+      bandLabel.setAttribute('font-size', fontSize);
       bandLabel.setAttribute('text-anchor','start');
       bandLabel.textContent = 'Absorbed λ colour';
       svg.appendChild(bandLabel);
@@ -1665,12 +1704,18 @@
         return isFinite(y) ? y.toFixed(3) : null;
       }).filter(v => v !== null);
       if (values.length) {
+        const seriesText = values.join(' ');
         const para = document.createElement('p');
         para.style.marginTop = '0.5rem';
         para.style.fontFamily = 'monospace';
         para.style.fontSize = '0.8rem';
-        para.textContent = values.join(' ');
+        para.textContent = seriesText;
         div.appendChild(para);
+        const copyBtn = document.createElement('button');
+        copyBtn.textContent = 'Copy';
+        copyBtn.style.marginTop = '0.25rem';
+        copyBtn.addEventListener('click', () => navigator.clipboard.writeText(seriesText));
+        div.appendChild(copyBtn);
       }
     }
     function getSampleColor(sample) {
@@ -1833,6 +1878,12 @@
       persistState();
       if (state.activeTab === 'spectrum') drawSpectrum();
     });
+    document.getElementById('yMaxInput').addEventListener('input', (ev) => {
+      const v = parseFloat(ev.target.value);
+      state.yMax = isFinite(v) && v > 0 ? v : null;
+      persistState();
+      if (state.activeTab === 'spectrum') drawSpectrum();
+    });
 
     // Delete selected samples button
     document.getElementById('deleteSamples').addEventListener('click', () => {
@@ -1925,6 +1976,9 @@
     // the colour scheme.
     document.documentElement.classList.remove('dark', 'light');
     document.documentElement.classList.add(state.theme);
+
+    const yMaxInput = document.getElementById('yMaxInput');
+    if (state.yMax !== null) yMaxInput.value = state.yMax;
 
     updateIlluminantOptions();
     updateTable();
