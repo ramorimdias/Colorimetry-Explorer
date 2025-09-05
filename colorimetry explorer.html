@@ -251,8 +251,6 @@
     .details-card th, .details-card td {
       padding: 0.2rem 0.5rem;
       border-bottom: 1px solid var(--border);
-    }
-    .details-card th {
       text-align: center;
     }
     .tooltip {
@@ -283,7 +281,7 @@
       <label>Illuminant:<select id="illuminantFilter"><option value="">All</option></select></label>
       <label>Group by Illuminant:<input type="checkbox" id="groupByIlluminant" /></label>
       <input type="search" id="searchBox" placeholder="Search Name or No." />
-      <button id="exportCsv">Export Filtered CSV</button>
+      <button id="exportCsv">Save CSV</button>
       <!-- Dark mode toggle button. Clicking this button toggles a .dark class on the root element
            and persists the choice in localStorage. -->
       <button id="themeToggle" title="Toggle dark mode" style="margin-left:auto">🌓</button>
@@ -945,11 +943,7 @@
         title.setAttribute('font-weight','bold');
         title.textContent = sc.name;
         svg.appendChild(title);
-        // markers for selected samples. We compute a list of all currently
-        // selected and visible samples once and use it to assign label
-        // offsets. This helps to minimise overlapping label text when
-        // persistent labels are enabled. The same ordering is used
-        // across all scales so that offsets remain consistent.
+        // markers for selected samples
         const selectedList = filteredSamples().filter(s => state.selected.has(s.id));
         selectedList.forEach(sample => {
           const val = sample[sc.valKey];
@@ -976,19 +970,7 @@
           });
           tri.addEventListener('mouseleave', hideTooltip);
           svg.appendChild(tri);
-          // Label for the sample.  When labels are enabled or exporting,
-          // this text becomes visible.  Include the numeric value in
-          // parentheses to make the scale reading explicit.  Offset
-          // vertically according to the sample’s position in the list to
-          // reduce overlap.
-          const label = document.createElementNS('http://www.w3.org/2000/svg','text');
-          const labelX = x + size + 6;
-          const idx = selectedList.findIndex(s => s.id === sample.id);
-          const labelY = y + 4 + idx * 12;
-          label.setAttribute('x', labelX);
-          label.setAttribute('y', labelY);
-          label.textContent = `${sample['Name']} (${isFinite(usedVal) ? usedVal.toFixed(1) : ''})`;
-          svg.appendChild(label);
+          // marker only; labels removed
         });
       });
     }
@@ -1144,9 +1126,7 @@
           svg.appendChild(lblY);
         }
       }
-      // plot samples.  Build a list of selected samples to compute label
-      // offsets. Each label shows the sample name
-      // and L*a*b* values.
+      // plot selected samples
       const selectedAB = filteredSamples().filter(s => state.selected.has(s.id));
       selectedAB.forEach(sample => {
         const a = sample['a*'];
@@ -1171,21 +1151,7 @@
         });
         tri.addEventListener('mouseleave', hideTooltip);
         plotGroup.appendChild(tri);
-        // Label for the sample.  When labels are enabled or exporting,
-        // this text is visible.  Offset vertically based on the sample
-        // index to reduce overlap, and include L*, a* and b* values.
-        const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
-        const idx = selectedAB.findIndex(s => s.id === sample.id);
-        const lblX = x + 6;
-        const lblY = y - 6 - idx * 12;
-        lbl.setAttribute('x', lblX);
-        lbl.setAttribute('y', lblY);
-        let text = `${sample['Name']}`;
-        if (isFinite(sample['L*']) && isFinite(sample['a*']) && isFinite(sample['b*'])) {
-          text += ` (L*: ${sample['L*'].toFixed(2)}, a*: ${sample['a*'].toFixed(2)}, b*: ${sample['b*'].toFixed(2)})`;
-        }
-        lbl.textContent = text;
-        plotGroup.appendChild(lbl);
+        // marker only; labels removed
       });
 
     }
@@ -1256,11 +1222,7 @@
         lbl.textContent = v;
         svg.appendChild(lbl);
       }
-      // markers for each selected sample.  Use a list of selected samples
-      // to determine label offsets and avoid overlapping text.  Each
-      // sample’s name and L* value are shown when labels are enabled or
-      // exporting.  Labels are spaced horizontally according to the
-      // sample’s index in the list.
+      // markers for each selected sample
       const selectedL = filteredSamples().filter(s => state.selected.has(s.id));
       selectedL.forEach(sample => {
         const l = sample['L*'];
@@ -1279,15 +1241,7 @@
         });
         tri.addEventListener('mouseleave', hideTooltip);
         svg.appendChild(tri);
-        // label for L* markers.  Offset horizontally by the sample index
-        // so that labels are less likely to overlap.  Include the L*
-        // value in parentheses.
-        const lblExp = document.createElementNS('http://www.w3.org/2000/svg','text');
-        const idx = selectedL.findIndex(s => s.id === sample.id);
-        lblExp.setAttribute('x', markerX + size + 4 + idx * 70);
-        lblExp.setAttribute('y', yPos + 3);
-        lblExp.textContent = `${sample['Name']} (${l.toFixed(2)})`;
-        svg.appendChild(lblExp);
+        // marker only; labels removed
       });
     }
     function drawSpectrum() {
@@ -1445,7 +1399,7 @@
       bandLabel.textContent = 'Absorbed λ colour';
       svg.appendChild(bandLabel);
       // plots
-      samplesToPlot.forEach((sample, sIdx) => {
+      samplesToPlot.forEach(sample => {
         let ys = sample.spectrum.map(p => {
           const v = p.absorbance;
           if (!isFinite(v)) return NaN;
@@ -1534,22 +1488,7 @@
           svg.appendChild(areaEl);
         }
 
-        // Add label at the end of the line for exporting and persistent label
-        // display.  Find the last finite value to anchor the label.  Offset
-        // vertically by sample index to minimise overlapping text.
-        let lastIndex = -1;
-        for (let i = ys.length - 1; i >= 0; i--) {
-          if (isFinite(ys[i])) { lastIndex = i; break; }
-        }
-        if (lastIndex >= 0) {
-          const label = document.createElementNS('http://www.w3.org/2000/svg','text');
-          const lx = toX(ws[lastIndex]) + 6;
-          const ly = toY(ys[lastIndex]) - 6 - sIdx * 12;
-          label.setAttribute('x', lx);
-          label.setAttribute('y', ly);
-          label.textContent = sample['Name'];
-          svg.appendChild(label);
-        }
+        // labels removed; no text at line end
       });
 
     }
@@ -1815,7 +1754,6 @@
       togglePanelBtn.title = hide ? 'Show charts' : 'Hide charts';
     });
 
-    // Toggle persistent display of labels.  When enabled, a CSS class
     // Export CSV button
     document.getElementById('exportCsv').addEventListener('click', () => {
       const rows = filteredSamples().filter(s => state.selected.has(s.id));
