@@ -163,22 +163,23 @@
       flex-direction: column;
       overflow: hidden;
     }
-    #samples-table {
+    #samples-table, #compare-table {
       width: 100%;
       border-collapse: collapse;
     }
-    #samples-table th, #samples-table td {
+    #samples-table th, #samples-table td,
+    #compare-table th, #compare-table td {
       padding: 0.3rem 0.5rem;
       border-bottom: 1px solid var(--border);
       white-space: nowrap;
     }
-    #samples-table th {
+    #samples-table th, #compare-table th {
       position: sticky;
       top: 0;
       background-color: var(--panel-bg);
       z-index: 1;
     }
-    #samples-table tr:hover {
+    #samples-table tr:hover, #compare-table tr:hover {
       background-color: var(--hover);
     }
     .warning {
@@ -328,6 +329,7 @@
         <button class="active" data-tab="scales">Scales</button>
         <button data-tab="cielab">CIELAB</button>
         <button data-tab="spectrum">Spectrum</button>
+        <button data-tab="compare">Compare</button>
         <button data-tab="details">Details</button>
       </div>
       <div class="tab-content" id="tab-scales" style="display:block">
@@ -350,6 +352,29 @@
         </div>
         <svg class="chart" id="spectrumChart" aria-label="Spectrum chart"></svg>
       </div>
+      <div class="tab-content" id="tab-compare" style="display:none">
+        <table id="compare-table" aria-label="Compare samples">
+          <thead>
+            <tr>
+              <th>Ref</th>
+              <th>Name</th>
+              <th>Date</th>
+              <th>Time</th>
+              <th>Illum.</th>
+              <th>L*</th>
+              <th>a*</th>
+              <th>b*</th>
+              <th>Hazen</th>
+              <th>Gardner</th>
+              <th>Saybolt</th>
+              <th>ASTM</th>
+              <th>Pt-Co</th>
+              <th>ΔE</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
       <div class="tab-content" id="tab-details" style="display:none">
         <div id="detailsCard" class="details-card">No sample selected.</div>
       </div>
@@ -364,6 +389,7 @@
       samples: [],
       // currently selected sample ids for overlay
       selected: new Set(),
+      selectedOrder: [],
       // UI toggles – these may be persisted
       activeTab: 'scales',
       logScale: false,
@@ -377,6 +403,8 @@
       lastClicked: null,
       // explicit theme string: 'light' or 'dark'
       theme: 'light',
+      // id of sample chosen as comparison reference
+      compareRef: null,
     };
     // Attempt to load persisted UI state
     try {
@@ -763,10 +791,14 @@
         cb.type = 'checkbox';
         cb.checked = state.selected.has(sample.id);
         cb.addEventListener('change', () => {
-          if (cb.checked) state.selected.add(sample.id);
-          else state.selected.delete(sample.id);
+          if (cb.checked) {
+            state.selected.add(sample.id);
+            if (!state.selectedOrder.includes(sample.id)) state.selectedOrder.push(sample.id);
+          } else {
+            state.selected.delete(sample.id);
+            state.selectedOrder = state.selectedOrder.filter(id => id !== sample.id);
+          }
           persistState();
-          // schedule a redraw to ensure charts update after layout
           scheduleDraw();
         });
         const tdCb = document.createElement('td');
@@ -822,6 +854,8 @@
                   state.selected.delete(oldId);
                   state.selected.add(sample.id);
                 }
+                const idx = state.selectedOrder.indexOf(oldId);
+                if (idx !== -1) state.selectedOrder[idx] = sample.id;
                 // Update last clicked id
                 if (state.lastClicked === oldId) {
                   state.lastClicked = sample.id;
@@ -1511,6 +1545,61 @@
       });
 
     }
+    function drawCompare() {
+      const tbody = document.querySelector('#compare-table tbody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+      const selectedIds = state.selectedOrder.filter(id => state.selected.has(id));
+      if (selectedIds.length === 0) return;
+      const samples = selectedIds.map(id => state.samples.find(s => s.id === id)).filter(Boolean);
+      if (samples.length === 0) return;
+      if (!state.compareRef || !samples.some(s => s.id === state.compareRef)) {
+        state.compareRef = samples[0].id;
+      }
+      const ref = samples.find(s => s.id === state.compareRef);
+      samples.forEach(sample => {
+        const tr = document.createElement('tr');
+        const tdRef = document.createElement('td');
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.name = 'compareRef';
+        cb.checked = sample.id === state.compareRef;
+        cb.addEventListener('change', () => {
+          if (cb.checked) {
+            state.compareRef = sample.id;
+            tbody.querySelectorAll('input[name="compareRef"]').forEach(el => { if (el !== cb) el.checked = false; });
+          } else {
+            state.compareRef = samples[0]?.id || null;
+          }
+          drawCompare();
+        });
+        tdRef.appendChild(cb);
+        tr.appendChild(tdRef);
+        ['Name','Date','Time','Illuminant','L*','a*','b*','Hazen(APHA)','Gardner','Saybolt','ASTM','Pt-Co'].forEach(key => {
+          const td = document.createElement('td');
+          let val = sample[key];
+          if (['L*','a*','b*'].includes(key)) val = isFinite(val) ? val.toFixed(2) : '';
+          else if (['Hazen(APHA)','Gardner','Saybolt','ASTM','Pt-Co'].includes(key)) val = isFinite(val) ? val.toFixed(1) : '';
+          td.textContent = val ?? '';
+          tr.appendChild(td);
+        });
+        const dE = calcDeltaE(sample, ref);
+        const tdE = document.createElement('td');
+        tdE.textContent = isFinite(dE) ? dE.toFixed(2) : '';
+        tr.appendChild(tdE);
+        tbody.appendChild(tr);
+      });
+    }
+    function calcDeltaE(s1, s2) {
+      if (!s1 || !s2) return NaN;
+      const L1 = s1['L*'], a1 = s1['a*'], b1 = s1['b*'];
+      const L2 = s2['L*'], a2 = s2['a*'], b2 = s2['b*'];
+      if (![L1,a1,b1,L2,a2,b2].every(v => isFinite(v))) return NaN;
+      const dL = L1 - L2;
+      const da = a1 - a2;
+      const db = b1 - b2;
+      return Math.hypot(dL, da, db);
+    }
     function drawDetails() {
       const div = document.getElementById('detailsCard');
       if (!state.lastClicked) {
@@ -1595,6 +1684,7 @@
         drawL();
       }
       else if (state.activeTab === 'spectrum') drawSpectrum();
+      else if (state.activeTab === 'compare') drawCompare();
       else if (state.activeTab === 'details') drawDetails();
     }
 
@@ -1640,7 +1730,10 @@
         const {samples, warnings} = parseCSV(text);
         assignDefaultColors(samples);
         state.samples.push(...samples);
-        samples.forEach(s => state.selected.add(s.id));
+        samples.forEach(s => {
+          state.selected.add(s.id);
+          state.selectedOrder.push(s.id);
+        });
         if (warnings && warnings.length) allWarnings.push(...warnings);
       }
       updateWarning(allWarnings);
@@ -1668,7 +1761,10 @@
         const {samples, warnings} = parseCSV(text);
         assignDefaultColors(samples);
         state.samples.push(...samples);
-        samples.forEach(s => state.selected.add(s.id));
+        samples.forEach(s => {
+          state.selected.add(s.id);
+          state.selectedOrder.push(s.id);
+        });
         if (warnings && warnings.length) allWarnings.push(...warnings);
       }
       updateWarning(allWarnings);
@@ -1679,8 +1775,13 @@
     document.getElementById('selectAll').addEventListener('change', (ev) => {
       const checked = ev.target.checked;
       filteredSamples().forEach(sample => {
-        if (checked) state.selected.add(sample.id);
-        else state.selected.delete(sample.id);
+        if (checked) {
+          state.selected.add(sample.id);
+          if (!state.selectedOrder.includes(sample.id)) state.selectedOrder.push(sample.id);
+        } else {
+          state.selected.delete(sample.id);
+          state.selectedOrder = state.selectedOrder.filter(id => id !== sample.id);
+        }
       });
       persistState();
       scheduleDraw();
@@ -1744,6 +1845,7 @@
       state.samples = state.samples.filter(s => !state.selected.has(s.id));
       // Clear current selection and reset last clicked if necessary
       state.selected.clear();
+      state.selectedOrder = [];
       if (state.lastClicked && ids.includes(state.lastClicked)) {
         state.lastClicked = null;
       }
@@ -1829,6 +1931,7 @@
     if (state.activeTab === 'scales') drawScales();
     else if (state.activeTab === 'cielab') { drawAB(); drawL(); }
     else if (state.activeTab === 'spectrum') drawSpectrum();
+    else if (state.activeTab === 'compare') drawCompare();
     else drawDetails();
     // restore selected sample colors and details
     drawDetails();
