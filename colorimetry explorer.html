@@ -224,7 +224,8 @@
     }
     svg.chart text {
       fill: var(--fg);
-      font-size: 14px;
+      font-size: 1em;
+      font-family: inherit;
     }
 
     /* When the container has the hide-main class, hide the right hand
@@ -347,7 +348,7 @@
         <div style="margin-bottom:0.5rem">
           <label><input type="checkbox" id="logScale"> log10(A)</label>
           <label style="margin-left:1rem"><input type="checkbox" id="smoothToggle"> Smooth</label>
-          <label style="margin-left:0.5rem">Window:<input type="range" id="smoothWindow" min="3" max="15" step="2" value="5" style="width:100px" /></label>
+          <label style="margin-left:0.5rem">Level:<input type="range" id="smoothWindow" min="3" max="15" step="2" value="5" style="width:100px" /></label>
           <label style="margin-left:1rem"><input type="checkbox" id="shadeArea"> Shade area</label>
           <label style="margin-left:1rem">Y max:<input type="number" id="yMaxInput" min="0" step="0.1" style="width:60px"></label>
         </div>
@@ -920,6 +921,8 @@
       const height = svg.clientHeight;
       const padding = {top:20,right:40,bottom:30,left:40};
       const chartHeight = (height - padding.top - padding.bottom) / 3;
+      const fontSize = parseFloat(getComputedStyle(document.body).fontSize);
+      const titleSize = fontSize * 1.2;
       // Set up a defs container for gradients
       const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
       svg.appendChild(defs);
@@ -987,7 +990,7 @@
           lbl.setAttribute('x', x);
           lbl.setAttribute('y', axisY + 16);
           lbl.setAttribute('text-anchor', 'middle');
-          lbl.setAttribute('font-size', '14');
+          lbl.setAttribute('font-size', fontSize);
           lbl.textContent = v;
           svg.appendChild(lbl);
         }
@@ -995,7 +998,7 @@
         const title = document.createElementNS('http://www.w3.org/2000/svg','text');
         title.setAttribute('x', padding.left);
         title.setAttribute('y', y0 + 16);
-        title.setAttribute('font-size','16');
+        title.setAttribute('font-size', titleSize);
         title.setAttribute('font-weight','bold');
         title.textContent = sc.name;
         svg.appendChild(title);
@@ -1039,6 +1042,7 @@
       const originX = width/2;
       const originY = height/2;
       const maxRadius = Math.min(width, height)/2 - padding;
+      const fontSize = parseFloat(getComputedStyle(document.body).fontSize);
       // The AB plane now covers values from -140 to +140 instead of ±100.
       const AB_RANGE = 140;
       // Clip path for circular region
@@ -1120,7 +1124,7 @@
         const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
         lbl.setAttribute('x', originX + rad);
         lbl.setAttribute('y', originY - 6);
-        lbl.setAttribute('font-size','14');
+        lbl.setAttribute('font-size', fontSize);
         lbl.textContent = rVal;
         plotGroup.appendChild(lbl);
       });
@@ -1169,14 +1173,14 @@
           const lblX = document.createElementNS('http://www.w3.org/2000/svg','text');
           lblX.setAttribute('x', x);
           lblX.setAttribute('y', originY + 16);
-          lblX.setAttribute('font-size','14');
+          lblX.setAttribute('font-size', fontSize);
           lblX.setAttribute('text-anchor','middle');
           lblX.textContent = v;
           svg.appendChild(lblX);
           const lblY = document.createElementNS('http://www.w3.org/2000/svg','text');
           lblY.setAttribute('x', originX - 3);
           lblY.setAttribute('y', y + 5);
-          lblY.setAttribute('font-size','14');
+          lblY.setAttribute('font-size', fontSize);
           lblY.setAttribute('text-anchor','end');
           lblY.textContent = v;
           svg.appendChild(lblY);
@@ -1217,6 +1221,7 @@
       const width = svg.clientWidth;
       const height = svg.clientHeight;
       const padding = {top:20,right:20,bottom:20,left:30};
+      const fontSize = parseFloat(getComputedStyle(document.body).fontSize);
       // vertical axis spans 0–100. Draw a vertical gradient next to the axis
       // to visually indicate the progression from light (top) to dark
       // (bottom). Ticks and labels are drawn on the axis. The axis
@@ -1273,7 +1278,7 @@
         const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
         lbl.setAttribute('x', axisX - 6);
         lbl.setAttribute('y', y + 5);
-        lbl.setAttribute('font-size','14');
+        lbl.setAttribute('font-size', fontSize);
         lbl.setAttribute('text-anchor','end');
         lbl.textContent = v;
         svg.appendChild(lbl);
@@ -1309,6 +1314,8 @@
       const bandHeight = 18;
       // Increase top padding to prevent curves from touching the top of the viewport
       const padding = {top:30,right:60,bottom:50 + bandHeight,left:50};
+      const fontSize = parseFloat(getComputedStyle(document.body).fontSize);
+      const titleSize = fontSize * 1.2;
       const samplesToPlot = filteredSamples().filter(s => state.selected.has(s.id));
       if (samplesToPlot.length === 0) return;
       // Determine x range (wavelength)
@@ -1357,7 +1364,7 @@
         const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
         lbl.setAttribute('x', x);
         lbl.setAttribute('y', height - padding.bottom + 24);
-        lbl.setAttribute('font-size','14');
+        lbl.setAttribute('font-size', fontSize);
         lbl.setAttribute('text-anchor','middle');
         lbl.textContent = w;
         svg.appendChild(lbl);
@@ -1385,7 +1392,7 @@
         const lbl = document.createElementNS('http://www.w3.org/2000/svg','text');
         lbl.setAttribute('x', padding.left - 6);
         lbl.setAttribute('y', y + 5);
-        lbl.setAttribute('font-size','14');
+        lbl.setAttribute('font-size', fontSize);
         lbl.setAttribute('text-anchor','end');
         lbl.textContent = (state.logScale ? yVal.toFixed(2) : yVal.toFixed(3));
         svg.appendChild(lbl);
@@ -1395,7 +1402,7 @@
       yTitle.setAttribute('transform', `rotate(-90 ${padding.left - 40},${(padding.top + height - padding.bottom)/2})`);
       yTitle.setAttribute('x', padding.left - 40);
       yTitle.setAttribute('y', (padding.top + height - padding.bottom)/2);
-      yTitle.setAttribute('font-size','16');
+      yTitle.setAttribute('font-size', titleSize);
       yTitle.setAttribute('text-anchor','middle');
       yTitle.textContent = state.logScale ? 'log10(A)' : 'Absorbance';
       svg.appendChild(yTitle);
@@ -1403,7 +1410,7 @@
       const xTitle = document.createElementNS('http://www.w3.org/2000/svg','text');
       xTitle.setAttribute('x', (padding.left + width - padding.right)/2);
       xTitle.setAttribute('y', height - bandHeight - 5);
-      xTitle.setAttribute('font-size','16');
+      xTitle.setAttribute('font-size', titleSize);
       xTitle.setAttribute('text-anchor','middle');
       xTitle.textContent = 'Wavelength (nm)';
       svg.appendChild(xTitle);
@@ -1451,7 +1458,7 @@
       const bandLabel = document.createElementNS('http://www.w3.org/2000/svg','text');
       bandLabel.setAttribute('x', padding.left);
       bandLabel.setAttribute('y', height - bandHeight - 2);
-      bandLabel.setAttribute('font-size','14');
+      bandLabel.setAttribute('font-size', fontSize);
       bandLabel.setAttribute('text-anchor','start');
       bandLabel.textContent = 'Absorbed λ colour';
       svg.appendChild(bandLabel);
@@ -1669,12 +1676,18 @@
         return isFinite(y) ? y.toFixed(3) : null;
       }).filter(v => v !== null);
       if (values.length) {
+        const seriesText = values.join(' ');
         const para = document.createElement('p');
         para.style.marginTop = '0.5rem';
         para.style.fontFamily = 'monospace';
         para.style.fontSize = '0.8rem';
-        para.textContent = values.join(' ');
+        para.textContent = seriesText;
         div.appendChild(para);
+        const copyBtn = document.createElement('button');
+        copyBtn.textContent = 'Copy';
+        copyBtn.style.marginTop = '0.25rem';
+        copyBtn.addEventListener('click', () => navigator.clipboard.writeText(seriesText));
+        div.appendChild(copyBtn);
       }
     }
     function getSampleColor(sample) {
