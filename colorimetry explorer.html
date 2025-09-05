@@ -356,6 +356,7 @@
         <table id="compare-table" aria-label="Compare samples">
           <thead>
             <tr>
+              <th>Ref</th>
               <th>Name</th>
               <th>Date</th>
               <th>Time</th>
@@ -402,6 +403,8 @@
       lastClicked: null,
       // explicit theme string: 'light' or 'dark'
       theme: 'light',
+      // id of sample chosen as comparison reference
+      compareRef: null,
     };
     // Attempt to load persisted UI state
     try {
@@ -1550,9 +1553,28 @@
       if (selectedIds.length === 0) return;
       const samples = selectedIds.map(id => state.samples.find(s => s.id === id)).filter(Boolean);
       if (samples.length === 0) return;
-      const ref = samples[0];
+      if (!state.compareRef || !samples.some(s => s.id === state.compareRef)) {
+        state.compareRef = samples[0].id;
+      }
+      const ref = samples.find(s => s.id === state.compareRef);
       samples.forEach(sample => {
         const tr = document.createElement('tr');
+        const tdRef = document.createElement('td');
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.name = 'compareRef';
+        cb.checked = sample.id === state.compareRef;
+        cb.addEventListener('change', () => {
+          if (cb.checked) {
+            state.compareRef = sample.id;
+            tbody.querySelectorAll('input[name="compareRef"]').forEach(el => { if (el !== cb) el.checked = false; });
+          } else {
+            state.compareRef = samples[0]?.id || null;
+          }
+          drawCompare();
+        });
+        tdRef.appendChild(cb);
+        tr.appendChild(tdRef);
         ['Name','Date','Time','Illuminant','L*','a*','b*','Hazen(APHA)','Gardner','Saybolt','ASTM','Pt-Co'].forEach(key => {
           const td = document.createElement('td');
           let val = sample[key];
