@@ -349,6 +349,7 @@
           <label style="margin-left:1rem"><input type="checkbox" id="smoothToggle"> Smooth</label>
           <label style="margin-left:0.5rem">Window:<input type="range" id="smoothWindow" min="3" max="15" step="2" value="5" style="width:100px" /></label>
           <label style="margin-left:1rem"><input type="checkbox" id="shadeArea"> Shade area</label>
+          <label style="margin-left:1rem">Y max:<input type="number" id="yMaxInput" min="0" step="0.1" style="width:60px"></label>
         </div>
         <svg class="chart" id="spectrumChart" aria-label="Spectrum chart"></svg>
       </div>
@@ -396,6 +397,7 @@
       smooth: false,
       smoothWindow: 5,
       shadeArea: false,
+      yMax: null,
       groupByIlluminant: false,
       // per‑session filters and search text (not persisted)
       illuminantFilter: '',
@@ -410,7 +412,7 @@
     try {
       const stored = JSON.parse(localStorage.getItem('colorimetryState') || '{}');
       // Only assign known persisted keys to avoid clobbering arrays/sets
-      ['activeTab','logScale','smooth','smoothWindow','shadeArea','groupByIlluminant','theme'].forEach(key => {
+      ['activeTab','logScale','smooth','smoothWindow','shadeArea','yMax','groupByIlluminant','theme'].forEach(key => {
         if (stored.hasOwnProperty(key)) state[key] = stored[key];
       });
     } catch (e) {
@@ -426,6 +428,7 @@
         smooth: state.smooth,
         smoothWindow: state.smoothWindow,
         shadeArea: state.shadeArea,
+        yMax: state.yMax,
         groupByIlluminant: state.groupByIlluminant,
         theme: state.theme,
       };
@@ -1322,13 +1325,14 @@
         }).filter(v => isFinite(v));
         allYs.push(...values);
       });
-      let minY = Math.min(...allYs);
       let maxY = Math.max(...allYs);
-      if (minY === maxY) {
-        minY -= 0.1;
-        maxY += 0.1;
+      if (state.yMax !== null && isFinite(state.yMax) && state.yMax > 0) {
+        maxY = state.yMax;
       }
-      // For log scale, adjust minY and maxY slightly
+      let minY = 0;
+      if (maxY <= minY) {
+        maxY = minY + 1;
+      }
       const toX = w => padding.left + (w - minW)/(maxW - minW) * (width - padding.left - padding.right);
       const toY = y => padding.top + (maxY - y)/(maxY - minY) * (height - padding.top - padding.bottom);
       // axes
@@ -1833,6 +1837,12 @@
       persistState();
       if (state.activeTab === 'spectrum') drawSpectrum();
     });
+    document.getElementById('yMaxInput').addEventListener('input', (ev) => {
+      const v = parseFloat(ev.target.value);
+      state.yMax = isFinite(v) && v > 0 ? v : null;
+      persistState();
+      if (state.activeTab === 'spectrum') drawSpectrum();
+    });
 
     // Delete selected samples button
     document.getElementById('deleteSamples').addEventListener('click', () => {
@@ -1925,6 +1935,9 @@
     // the colour scheme.
     document.documentElement.classList.remove('dark', 'light');
     document.documentElement.classList.add(state.theme);
+
+    const yMaxInput = document.getElementById('yMaxInput');
+    if (state.yMax !== null) yMaxInput.value = state.yMax;
 
     updateIlluminantOptions();
     updateTable();
