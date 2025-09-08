@@ -283,6 +283,7 @@
       <label>Illuminant:<select id="illuminantFilter"><option value="">All</option></select></label>
       <label>Group by Illuminant:<input type="checkbox" id="groupByIlluminant" /></label>
       <input type="search" id="searchBox" placeholder="Search Name or No." />
+      <button id="saveProject">Save Project</button>
       <button id="exportCsv">Save CSV</button>
       <!-- Dark mode toggle button. Clicking this button toggles a .dark class on the root element
            and persists the choice in localStorage. -->
@@ -385,6 +386,7 @@
     <div id="tooltip" class="tooltip" style="display:none"></div>
   <script>
   (function() {
+    const appScript = document.currentScript;
     // State management
     const state = {
       // parsed samples are kept entirely in memory and never persisted
@@ -408,16 +410,37 @@
       theme: 'light',
       // id of sample chosen as comparison reference
       compareRef: null,
+      // project name for saving/loading
+      projectName: document.title,
     };
     // Attempt to load persisted UI state
     try {
       const stored = JSON.parse(localStorage.getItem('colorimetryState') || '{}');
       // Only assign known persisted keys to avoid clobbering arrays/sets
-      ['activeTab','logScale','smooth','smoothWindow','shadeArea','yMax','groupByIlluminant','theme'].forEach(key => {
+      ['activeTab','logScale','smooth','smoothWindow','shadeArea','yMax','groupByIlluminant','theme','projectName'].forEach(key => {
         if (stored.hasOwnProperty(key)) state[key] = stored[key];
       });
     } catch (e) {
       // ignore invalid stored state
+    }
+    const projectEl = document.getElementById('projectData');
+    if (projectEl) {
+      try {
+        const proj = JSON.parse(projectEl.textContent);
+        if (proj.samples) state.samples = proj.samples;
+        if (proj.selected) state.selected = new Set(proj.selected);
+        if (proj.selectedOrder) state.selectedOrder = proj.selectedOrder;
+        ['activeTab','logScale','smooth','smoothWindow','shadeArea','yMax','groupByIlluminant','theme','compareRef','projectName'].forEach(key => {
+          if (proj.hasOwnProperty(key)) state[key] = proj[key];
+        });
+      } catch (e) {
+        console.error('Failed to load project data', e);
+      }
+    }
+    if (state.projectName) {
+      document.title = state.projectName;
+      const h1 = document.querySelector('header h1');
+      if (h1) h1.textContent = state.projectName;
     }
     // Save state
     function persistState() {
@@ -432,6 +455,7 @@
         yMax: state.yMax,
         groupByIlluminant: state.groupByIlluminant,
         theme: state.theme,
+        projectName: state.projectName,
       };
       try {
         localStorage.setItem('colorimetryState', JSON.stringify(toStore));
@@ -459,18 +483,21 @@
       '#911eb4','#46f0f0','#f032e6','#d2f53c','#fabebe',
       '#008080','#e6beff','#aa6e28','#800000','#aaffc3'
     ];
-    async function download(filename, text) {
+    async function download(filename, text, mime='text/csv') {
+      const blob = new Blob([text], {type: mime});
       if (window.showSaveFilePicker) {
         try {
+          const ext = mime === 'text/html' ? '.html' : '.csv';
+          const desc = mime === 'text/html' ? 'HTML Files' : 'CSV Files';
           const handle = await window.showSaveFilePicker({
             suggestedName: filename,
             types: [{
-              description: 'CSV Files',
-              accept: {'text/csv': ['.csv']}
+              description: desc,
+              accept: { [mime]: [ext] }
             }]
           });
           const writable = await handle.createWritable();
-          await writable.write(text);
+          await writable.write(blob);
           await writable.close();
         } catch (err) {
           if (err.name !== 'AbortError') {
@@ -479,7 +506,6 @@
         }
         return;
       }
-      const blob = new Blob([text], {type:'text/csv'});
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -1924,6 +1950,33 @@
       const hide = containerEl.classList.toggle('hide-main');
       // Update the button title to reflect the action when clicked next
       togglePanelBtn.title = hide ? 'Show charts' : 'Hide charts';
+    });
+
+    // Save Project button
+    document.getElementById('saveProject').addEventListener('click', async () => {
+      if (state.samples.length === 0) {
+        alert('No data to save.');
+        return;
+      }
+      const name = prompt('Enter project name', state.projectName) || state.projectName;
+      if (!name) return;
+      state.projectName = name;
+      persistState();
+      document.title = name;
+      const h1 = document.querySelector('header h1');
+      if (h1) h1.textContent = name;
+      let dataEl = document.getElementById('projectData');
+      if (!dataEl) {
+        dataEl = document.createElement('script');
+        dataEl.id = 'projectData';
+        dataEl.type = 'application/json';
+        appScript.parentNode.insertBefore(dataEl, appScript);
+      }
+      const projectState = { ...state, selected: Array.from(state.selected) };
+      dataEl.textContent = JSON.stringify(projectState);
+      const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+      const fileName = name.replace(/\s+/g,'_') + '.html';
+      await download(fileName, html, 'text/html');
     });
 
     // Export CSV button
