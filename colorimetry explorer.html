@@ -151,11 +151,19 @@
     }
     #sidebar {
       width: 300px;
-      min-width: 250px;
-      max-width: 400px;
+      min-width: 200px;
       border-right: 1px solid var(--border);
       overflow-y: auto;
       background-color: var(--panel-bg);
+      flex-shrink: 0;
+    }
+    #divider {
+      width: 5px;
+      cursor: col-resize;
+      background-color: var(--border);
+    }
+    #divider:hover, #divider.dragging {
+      background-color: var(--accent);
     }
     #main {
       flex: 1;
@@ -231,6 +239,9 @@
     /* When the container has the hide-main class, hide the right hand
        panel (charts) and allow the sidebar to expand to the full width. */
     #container.hide-main #main {
+      display: none;
+    }
+    #container.hide-main #divider {
       display: none;
     }
     #container.hide-main #sidebar {
@@ -325,9 +336,10 @@
             <th>Pt-Co</th>
           </tr>
         </thead>
-        <tbody></tbody>
+      <tbody></tbody>
       </table>
     </aside>
+    <div id="divider" role="separator" aria-orientation="vertical"></div>
     <main id="main">
       <div class="tabs">
         <button class="active" data-tab="scales">Scales</button>
@@ -416,6 +428,13 @@
       // project name for saving/loading
       projectName: document.title,
     };
+
+    function setProjectTitle(name) {
+      state.projectName = name;
+      document.title = name || 'Colorimetry Explorer';
+      const h1 = document.querySelector('header h1');
+      if (h1) h1.textContent = name || 'Colorimetry Explorer';
+    }
     // Attempt to load persisted UI state
     try {
       const stored = JSON.parse(localStorage.getItem('colorimetryState') || '{}');
@@ -442,11 +461,11 @@
         console.error('Failed to load project data', e);
       }
     }
-    if (state.projectName) {
-      document.title = state.projectName;
-      const h1 = document.querySelector('header h1');
-      if (h1) h1.textContent = state.projectName;
+    if (!projectEl) {
+      state.projectName = '';
     }
+    setProjectTitle(state.projectName);
+    if (!projectEl) persistState();
     // Save state
     function persistState() {
       // Only persist UI toggles as requested; samples, selections, search, filters
@@ -1802,6 +1821,7 @@
     });
     document.getElementById('fileInput').addEventListener('change', async (ev) => {
       const files = Array.from(ev.target.files);
+      if (files.length) setProjectTitle('');
       let allWarnings = [];
       for (const file of files) {
         const text = await file.text();
@@ -1833,6 +1853,7 @@
       ev.preventDefault();
       ev.currentTarget.classList.remove('dragover');
       const files = Array.from(ev.dataTransfer.files).filter(f => /\.csv$/i.test(f.name));
+      if (files.length) setProjectTitle('');
       let allWarnings = [];
       for (const file of files) {
         const text = await file.text();
@@ -1971,14 +1992,39 @@
       persistState();
     });
 
+    const sidebar = document.getElementById('sidebar');
     // Toggle main panel visibility (hide/show charts)
     const togglePanelBtn = document.getElementById('toggleMainPanel');
     togglePanelBtn.addEventListener('click', () => {
       const containerEl = document.getElementById('container');
       const hide = containerEl.classList.toggle('hide-main');
+      if (hide) sidebar.style.width = '';
       // Update the button title to reflect the action when clicked next
       togglePanelBtn.title = hide ? 'Show charts' : 'Hide charts';
     });
+
+    const divider = document.getElementById('divider');
+    divider.addEventListener('mousedown', startDrag);
+    function startDrag(e) {
+      e.preventDefault();
+      divider.classList.add('dragging');
+      document.addEventListener('mousemove', onDrag);
+      document.addEventListener('mouseup', stopDrag);
+    }
+    function onDrag(e) {
+      const containerRect = document.getElementById('container').getBoundingClientRect();
+      let newWidth = e.clientX - containerRect.left;
+      const min = 150;
+      const max = containerRect.width - 200;
+      if (newWidth < min) newWidth = min;
+      if (newWidth > max) newWidth = max;
+      sidebar.style.width = newWidth + 'px';
+    }
+    function stopDrag() {
+      divider.classList.remove('dragging');
+      document.removeEventListener('mousemove', onDrag);
+      document.removeEventListener('mouseup', stopDrag);
+    }
 
     // Save Project button
     document.getElementById('saveProject').addEventListener('click', async () => {
@@ -1988,11 +2034,8 @@
       }
       const name = prompt('Enter project name', state.projectName) || state.projectName;
       if (!name) return;
-      state.projectName = name;
+      setProjectTitle(name);
       persistState();
-      document.title = name;
-      const h1 = document.querySelector('header h1');
-      if (h1) h1.textContent = name;
       let dataEl = document.getElementById('projectData');
       if (!dataEl) {
         dataEl = document.createElement('script');
