@@ -432,11 +432,10 @@
         astm: 'ASTM',
         ptco: 'Pt-Co',
         all: 'All',
-        enterProjectName: 'Enter project name',
+        couldNotSaveFile: 'Could not save file.',
         noDataToSave: 'No data to save.',
         noUnselectedToDelete: 'No unselected samples to delete.',
-        noSamplesToDelete: 'No samples selected to delete.',
-        couldNotSaveFile: 'Could not save file.'
+        noSamplesToDelete: 'No samples selected to delete.'
       },
       fr: {
         title: 'Explorateur Colorimétrique',
@@ -468,11 +467,10 @@
         astm: 'ASTM',
         ptco: 'Pt-Co',
         all: 'Tous',
-        enterProjectName: 'Entrer le nom du projet',
+        couldNotSaveFile: 'Impossible d\u2019enregistrer le fichier.',
         noDataToSave: 'Aucune donnée à enregistrer.',
         noUnselectedToDelete: 'Aucun échantillon non sélectionné à supprimer.',
-        noSamplesToDelete: 'Aucun échantillon sélectionné à supprimer.',
-        couldNotSaveFile: 'Impossible d\'enregistrer le fichier.'
+        noSamplesToDelete: 'Aucun échantillon sélectionné à supprimer.'
       }
     };
     // State management
@@ -604,42 +602,6 @@
       '#911eb4','#46f0f0','#f032e6','#d2f53c','#fabebe',
       '#008080','#e6beff','#aa6e28','#800000','#aaffc3'
     ];
-    async function download(filename, text, mime='text/csv') {
-      const blob = new Blob([text], {type: mime});
-      if (window.showSaveFilePicker) {
-        try {
-          const ext = mime === 'text/html' ? '.html' : '.csv';
-          const desc = mime === 'text/html' ? 'HTML Files' : 'CSV Files';
-          const handle = await window.showSaveFilePicker({
-            suggestedName: filename,
-            types: [{
-              description: desc,
-              accept: { [mime]: [ext] }
-            }]
-          });
-          const writable = await handle.createWritable();
-          await writable.write(blob);
-          await writable.close();
-          return; // successfully saved using File System Access API
-        } catch (err) {
-          if (err.name === 'AbortError') return; // user cancelled
-          console.error('Error saving file', err);
-          alert(t('couldNotSaveFile'));
-          return;
-
-        }
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 0);
-    }
     function assignDefaultColors(samples) {
       let idx = state.samples.length;
       samples.forEach(s => {
@@ -2140,24 +2102,42 @@
           alert(t('noDataToSave'));
           return;
         }
-        const input = prompt(t('enterProjectName'), state.projectName);
-      if (input === null) return; // user cancelled
-      const name = input.trim() || state.projectName;
-      setProjectTitle(name);
-      persistState();
-      let dataEl = document.getElementById('projectData');
-      if (!dataEl) {
-        dataEl = document.createElement('script');
-        dataEl.id = 'projectData';
-        dataEl.type = 'application/json';
-        appScript.parentNode.insertBefore(dataEl, appScript);
-      }
-      const projectState = { ...state, selected: Array.from(state.selected) };
-      dataEl.textContent = JSON.stringify(projectState);
-      const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
-      const fileName = name.replace(/\s+/g,'_') + '.html';
-      await download(fileName, html, 'text/html');
-    });
+        if (!window.showSaveFilePicker) {
+          alert(t('couldNotSaveFile'));
+          return;
+        }
+        let handle;
+        try {
+          handle = await window.showSaveFilePicker({
+            suggestedName: (state.projectName || 'project') + '.html',
+            types: [{
+              description: 'HTML Files',
+              accept: { 'text/html': ['.html'] }
+            }]
+          });
+        } catch (err) {
+          if (err.name === 'AbortError') return; // user cancelled
+          console.error('Error saving file', err);
+          alert(t('couldNotSaveFile'));
+          return;
+        }
+        const name = handle.name.replace(/\.html$/i, '');
+        setProjectTitle(name);
+        persistState();
+        let dataEl = document.getElementById('projectData');
+        if (!dataEl) {
+          dataEl = document.createElement('script');
+          dataEl.id = 'projectData';
+          dataEl.type = 'application/json';
+          appScript.parentNode.insertBefore(dataEl, appScript);
+        }
+        const projectState = { ...state, selected: Array.from(state.selected) };
+        dataEl.textContent = JSON.stringify(projectState);
+        const html = '<!DOCTYPE html>\\n' + document.documentElement.outerHTML;
+        const writable = await handle.createWritable();
+        await writable.write(new Blob([html], { type: 'text/html' }));
+        await writable.close();
+      });
 
     // Initialize initial render
     // Apply persisted theme before first render to avoid flash. We remove any
