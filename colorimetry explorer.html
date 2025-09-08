@@ -282,6 +282,7 @@
       <div class="upload-zone" id="uploadZone">Drop or select CSV…<input type="file" id="fileInput" multiple accept=".csv" /></div>
       <label>Illuminant:<select id="illuminantFilter"><option value="">All</option></select></label>
       <label>Group by Illuminant:<input type="checkbox" id="groupByIlluminant" /></label>
+      <label>Hide non-selected:<input type="checkbox" id="hideUnselected" /></label>
       <input type="search" id="searchBox" placeholder="Search Name or No." />
       <button id="exportCsv">Save CSV</button>
       <!-- Dark mode toggle button. Clicking this button toggles a .dark class on the root element
@@ -321,8 +322,9 @@
         <tbody></tbody>
       </table>
       <div style="padding:0.5rem">
-        <!-- Button to delete any currently selected samples from the program. -->
+        <!-- Buttons to delete selected or unselected samples from the program. -->
         <button id="deleteSamples" title="Remove selected samples from the list">Delete Selected</button>
+        <button id="deleteUnselected" title="Remove samples that are not selected">Delete Unselected</button>
       </div>
     </aside>
     <main id="main">
@@ -400,6 +402,7 @@
       shadeArea: false,
       yMax: null,
       groupByIlluminant: false,
+      hideUnselected: false,
       // per‑session filters and search text (not persisted)
       illuminantFilter: '',
       search: '',
@@ -413,7 +416,7 @@
     try {
       const stored = JSON.parse(localStorage.getItem('colorimetryState') || '{}');
       // Only assign known persisted keys to avoid clobbering arrays/sets
-      ['activeTab','logScale','smooth','smoothWindow','shadeArea','yMax','groupByIlluminant','theme'].forEach(key => {
+      ['activeTab','logScale','smooth','smoothWindow','shadeArea','yMax','groupByIlluminant','hideUnselected','theme'].forEach(key => {
         if (stored.hasOwnProperty(key)) state[key] = stored[key];
       });
     } catch (e) {
@@ -431,6 +434,7 @@
         shadeArea: state.shadeArea,
         yMax: state.yMax,
         groupByIlluminant: state.groupByIlluminant,
+        hideUnselected: state.hideUnselected,
         theme: state.theme,
       };
       try {
@@ -841,6 +845,7 @@
           const target = `${s['No.']} ${s.Name}`.toLowerCase();
           if (!target.includes(search)) return false;
         }
+        if (state.hideUnselected && !state.selected.has(s.id)) return false;
         return true;
       });
     }
@@ -1841,6 +1846,11 @@
       persistState();
       scheduleDraw();
     });
+    document.getElementById('hideUnselected').addEventListener('change', (ev) => {
+      state.hideUnselected = ev.target.checked;
+      persistState();
+      scheduleDraw();
+    });
     document.getElementById('searchBox').addEventListener('input', (ev) => {
       state.search = ev.target.value;
       persistState();
@@ -1898,6 +1908,22 @@
       state.selected.clear();
       state.selectedOrder = [];
       if (state.lastClicked && ids.includes(state.lastClicked)) {
+        state.lastClicked = null;
+      }
+      updateIlluminantOptions();
+      // Do not persist samples, but UI state remains
+      scheduleDraw();
+      drawDetails();
+    });
+    // Delete unselected samples button
+    document.getElementById('deleteUnselected').addEventListener('click', () => {
+      const remaining = state.samples.filter(s => state.selected.has(s.id));
+      if (remaining.length === state.samples.length) {
+        alert('No unselected samples to delete.');
+        return;
+      }
+      state.samples = remaining;
+      if (state.lastClicked && !state.selected.has(state.lastClicked)) {
         state.lastClicked = null;
       }
       updateIlluminantOptions();
