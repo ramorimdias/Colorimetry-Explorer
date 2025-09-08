@@ -483,6 +483,7 @@
       '#008080','#e6beff','#aa6e28','#800000','#aaffc3'
     ];
     async function download(filename, text, mime='text/csv') {
+      const blob = new Blob([text], {type: mime});
       if (window.showSaveFilePicker) {
         try {
           const ext = mime === 'text/html' ? '.html' : '.csv';
@@ -495,7 +496,7 @@
             }]
           });
           const writable = await handle.createWritable();
-          await writable.write(text);
+          await writable.write(blob);
           await writable.close();
         } catch (err) {
           if (err.name !== 'AbortError') {
@@ -504,7 +505,6 @@
         }
         return;
       }
-      const blob = new Blob([text], {type:mime});
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
