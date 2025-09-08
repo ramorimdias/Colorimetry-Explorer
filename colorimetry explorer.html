@@ -297,6 +297,11 @@
   </header>
   <div id="container">
     <aside id="sidebar">
+      <div style="padding:0.5rem">
+        <!-- Buttons to delete selected or unselected samples from the program. -->
+        <button id="deleteSamples" title="Remove selected samples from the list">Delete Selected</button>
+        <button id="deleteUnselected" title="Remove samples that are not selected">Delete Unselected</button>
+      </div>
       <div class="warning" id="warning" style="display:none"></div>
       <table id="samples-table" aria-label="Samples">
         <thead>
@@ -321,11 +326,6 @@
         </thead>
         <tbody></tbody>
       </table>
-      <div style="padding:0.5rem">
-        <!-- Buttons to delete selected or unselected samples from the program. -->
-        <button id="deleteSamples" title="Remove selected samples from the list">Delete Selected</button>
-        <button id="deleteUnselected" title="Remove samples that are not selected">Delete Unselected</button>
-      </div>
     </aside>
     <main id="main">
       <div class="tabs">
