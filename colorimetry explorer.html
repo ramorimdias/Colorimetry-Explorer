@@ -296,7 +296,6 @@
       <label>Hide non-selected:<input type="checkbox" id="hideUnselected" /></label>
       <input type="search" id="searchBox" placeholder="Search Name or No." />
       <button id="saveProject">Save Project</button>
-      <button id="exportCsv">Save CSV</button>
       <!-- Dark mode toggle button. Clicking this button toggles a .dark class on the root element
            and persists the choice in localStorage. -->
       <button id="themeToggle" title="Toggle dark mode" style="margin-left:auto">🌓</button>
@@ -528,7 +527,9 @@
         } catch (err) {
           if (err.name === 'AbortError') return; // user cancelled
           console.error('Error saving file', err);
-          // fall through to anchor download fallback
+          alert('Could not save file.');
+          return;
+
         }
       }
       const url = URL.createObjectURL(blob);
@@ -2032,8 +2033,9 @@
         alert('No data to save.');
         return;
       }
-      const name = prompt('Enter project name', state.projectName) || state.projectName;
-      if (!name) return;
+      const input = prompt('Enter project name', state.projectName);
+      if (input === null) return; // user cancelled
+      const name = input.trim() || state.projectName;
       setProjectTitle(name);
       persistState();
       let dataEl = document.getElementById('projectData');
@@ -2050,49 +2052,6 @@
       await download(fileName, html, 'text/html');
     });
 
-    // Export CSV button
-    document.getElementById('exportCsv').addEventListener('click', () => {
-      const rows = filteredSamples().filter(s => state.selected.has(s.id));
-      if (rows.length === 0) {
-        alert('No samples selected to export.');
-        return;
-      }
-      // build CSV header and rows
-      const header = ['No.','Name','Date','Time','Average','Illuminant','Attachment','L*','a*','b*','Hazen(APHA)','Gardner','Saybolt','ASTM','Pt-Co'];
-      // gather unique wavelengths across samples
-      const wlSet = new Set();
-      rows.forEach(s => s.spectrum.forEach(p => wlSet.add(p.wavelength)));
-      const wavelengths = Array.from(wlSet).sort((a,b) => a-b);
-      wavelengths.forEach(w => header.push(`${w}nm(A)`));
-      const lines = [];
-      lines.push(header.join(','));
-      rows.forEach(s => {
-        const row = [];
-        header.forEach(col => {
-          if (['No.','Name','Date','Time','Average','Illuminant','Attachment'].includes(col)) {
-            row.push(s[col] || '');
-          } else if (['L*','a*','b*','Hazen(APHA)','Gardner','Saybolt','ASTM','Pt-Co'].includes(col)) {
-            const v = s[col];
-            row.push(isFinite(v) ? v.toFixed(3) : '');
-          } else {
-            // spectral
-            const m = col.match(/^(\d+)nm\(A\)$/);
-            if (m) {
-              const wl = parseInt(m[1]);
-              const p = s.spectrum.find(p => p.wavelength === wl);
-              const v = p ? p.absorbance : NaN;
-              row.push(isFinite(v) ? v.toFixed(3) : '');
-            } else {
-              row.push('');
-            }
-          }
-        });
-        lines.push(row.join(','));
-      });
-      const csvText = lines.join('\n');
-      const ts = new Date().toISOString().replace(/[:.]/g,'-');
-      download(`samples_${ts}.csv`, csvText);
-    });
     // Initialize initial render
     // Apply persisted theme before first render to avoid flash. We remove any
     // existing theme classes and add either .dark or .light to explicitly
