@@ -151,11 +151,20 @@
     }
     #sidebar {
       width: 300px;
-      min-width: 250px;
-      max-width: 400px;
+      min-width: 200px;
+      max-width: none;
       border-right: 1px solid var(--border);
       overflow-y: auto;
       background-color: var(--panel-bg);
+    }
+    #splitter {
+      width: 5px;
+      cursor: col-resize;
+      background-color: var(--border);
+    }
+    #splitter:hover,
+    #splitter.dragging {
+      background-color: var(--accent);
     }
     #main {
       flex: 1;
@@ -237,6 +246,9 @@
       width: auto;
       max-width: none;
       flex: 1;
+    }
+    #container.hide-main #splitter {
+      display: none;
     }
     .details-card {
       background-color: var(--panel-bg);
@@ -325,6 +337,7 @@
         <button id="deleteSamples" title="Remove selected samples from the list">Delete Selected</button>
       </div>
     </aside>
+    <div id="splitter" title="Drag to resize"></div>
     <main id="main">
       <div class="tabs">
         <button class="active" data-tab="scales">Scales</button>
@@ -1918,12 +1931,37 @@
     });
 
     // Toggle main panel visibility (hide/show charts)
+    const containerEl = document.getElementById('container');
     const togglePanelBtn = document.getElementById('toggleMainPanel');
     togglePanelBtn.addEventListener('click', () => {
-      const containerEl = document.getElementById('container');
       const hide = containerEl.classList.toggle('hide-main');
       // Update the button title to reflect the action when clicked next
       togglePanelBtn.title = hide ? 'Show charts' : 'Hide charts';
+    });
+
+    // Sidebar resizing via splitter
+    const sidebarEl = document.getElementById('sidebar');
+    const splitter = document.getElementById('splitter');
+    let isResizing = false;
+    splitter.addEventListener('mousedown', (e) => {
+      isResizing = true;
+      splitter.classList.add('dragging');
+      document.body.style.cursor = 'col-resize';
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!isResizing) return;
+      const rect = containerEl.getBoundingClientRect();
+      const width = e.clientX - rect.left;
+      const min = 200;
+      const max = rect.width - 200;
+      sidebarEl.style.width = Math.min(Math.max(width, min), max) + 'px';
+    });
+    document.addEventListener('mouseup', () => {
+      if (!isResizing) return;
+      isResizing = false;
+      splitter.classList.remove('dragging');
+      document.body.style.cursor = '';
     });
 
     // Export CSV button
