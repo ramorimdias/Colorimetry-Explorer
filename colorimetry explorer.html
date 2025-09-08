@@ -386,6 +386,7 @@
     <div id="tooltip" class="tooltip" style="display:none"></div>
   <script>
   (function() {
+    const appScript = document.currentScript;
     // State management
     const state = {
       // parsed samples are kept entirely in memory and never persisted
@@ -1969,9 +1970,9 @@
         dataEl = document.createElement('script');
         dataEl.id = 'projectData';
         dataEl.type = 'application/json';
-        document.body.appendChild(dataEl);
+        appScript.parentNode.insertBefore(dataEl, appScript);
       }
-      const projectState = {...state, selected: Array.from(state.selected)};
+      const projectState = { ...state, selected: Array.from(state.selected) };
       dataEl.textContent = JSON.stringify(projectState);
       const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
       const fileName = name.replace(/\s+/g,'_') + '.html';
