@@ -524,12 +524,12 @@
           const writable = await handle.createWritable();
           await writable.write(blob);
           await writable.close();
+          return; // successfully saved using File System Access API
         } catch (err) {
-          if (err.name !== 'AbortError') {
-            console.error('Error saving file', err);
-          }
+          if (err.name === 'AbortError') return; // user cancelled
+          console.error('Error saving file', err);
+          // fall through to anchor download fallback
         }
-        return;
       }
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
