@@ -288,51 +288,52 @@
 </head>
 <body>
   <header>
-    <h1>Colorimetry Explorer</h1>
+    <h1 data-i18n="title">Colorimetry Explorer</h1>
     <div class="toolbar">
-      <div class="upload-zone" id="uploadZone">Drop or select CSV…<input type="file" id="fileInput" multiple accept=".csv" /></div>
-      <label>Illuminant:<select id="illuminantFilter"><option value="">All</option></select></label>
-      <label>Group by Illuminant:<input type="checkbox" id="groupByIlluminant" /></label>
-      <label>Hide non-selected:<input type="checkbox" id="hideUnselected" /></label>
-      <input type="search" id="searchBox" placeholder="Search Name or No." />
-      <button id="saveProject">Save Project</button>
+      <div class="upload-zone" id="uploadZone"><span data-i18n="drop">Drop or select CSV…</span><input type="file" id="fileInput" multiple accept=".csv" /></div>
+      <label><span data-i18n="labelIlluminant">Illuminant:</span><select id="illuminantFilter"><option value="" data-i18n="all">All</option></select></label>
+      <label><span data-i18n="labelGroupIlluminant">Group by Illuminant:</span><input type="checkbox" id="groupByIlluminant" /></label>
+      <label><span data-i18n="labelHideUnselected">Hide non-selected:</span><input type="checkbox" id="hideUnselected" /></label>
+      <input type="search" id="searchBox" data-i18n-placeholder="searchPlaceholder" placeholder="Search Name or No." />
+      <button id="saveProject" data-i18n="saveProject">Save Project</button>
       <!-- Dark mode toggle button. Clicking this button toggles a .dark class on the root element
            and persists the choice in localStorage. -->
-      <button id="themeToggle" title="Toggle dark mode" style="margin-left:auto">🌓</button>
+      <button id="themeToggle" data-i18n-title="toggleDark" title="Toggle dark mode" style="margin-left:auto">🌓</button>
+      <button id="languageToggle" data-i18n-title="changeLanguage">FR</button>
       <!-- Toggle visibility of the chart panel. When clicked, this button collapses the
            main panel containing the charts so that the sample sidebar fills the available space.
            Clicking again restores the charts. The button label updates to indicate the
            current state. -->
-      <button id="toggleMainPanel" title="Hide charts">⇄</button>
+      <button id="toggleMainPanel" data-i18n-title="hideCharts" title="Hide charts">⇄</button>
     </div>
   </header>
   <div id="container">
     <aside id="sidebar">
       <div style="padding:0.5rem">
         <!-- Buttons to delete selected or unselected samples from the program. -->
-        <button id="deleteSamples" title="Remove selected samples from the list">Delete Selected</button>
-        <button id="deleteUnselected" title="Remove samples that are not selected">Delete Unselected</button>
+        <button id="deleteSamples" data-i18n="deleteSelected" title="Remove selected samples from the list">Delete Selected</button>
+        <button id="deleteUnselected" data-i18n="deleteUnselected" title="Remove samples that are not selected">Delete Unselected</button>
       </div>
       <div class="warning" id="warning" style="display:none"></div>
       <table id="samples-table" aria-label="Samples">
         <thead>
           <tr>
             <th><input type="checkbox" id="selectAll" title="Select All/None" /></th>
-            <th>Color</th>
-            <th>No.</th>
-            <th>Name</th>
-            <th>Date</th>
-            <th>Time</th>
-            <th>Avg.</th>
-            <th>Illum.</th>
-            <th>L*</th>
-            <th>a*</th>
-            <th>b*</th>
-            <th>Hazen</th>
-            <th>Gardner</th>
-            <th>Saybolt</th>
-            <th>ASTM</th>
-            <th>Pt-Co</th>
+            <th data-i18n="color">Color</th>
+            <th data-i18n="no">No.</th>
+            <th data-i18n="name">Name</th>
+            <th data-i18n="date">Date</th>
+            <th data-i18n="time">Time</th>
+            <th data-i18n="avg">Avg.</th>
+            <th data-i18n="illum">Illum.</th>
+            <th data-i18n="lstar">L*</th>
+            <th data-i18n="astar">a*</th>
+            <th data-i18n="bstar">b*</th>
+            <th data-i18n="hazen">Hazen</th>
+            <th data-i18n="gardner">Gardner</th>
+            <th data-i18n="saybolt">Saybolt</th>
+            <th data-i18n="astm">ASTM</th>
+            <th data-i18n="ptco">Pt-Co</th>
           </tr>
         </thead>
       <tbody></tbody>
@@ -400,6 +401,80 @@
   <script>
   (function() {
     const appScript = document.currentScript;
+    const translations = {
+      en: {
+        title: 'Colorimetry Explorer',
+        drop: 'Drop or select CSV…',
+        labelIlluminant: 'Illuminant:',
+        labelGroupIlluminant: 'Group by Illuminant:',
+        labelHideUnselected: 'Hide non-selected:',
+        searchPlaceholder: 'Search Name or No.',
+        saveProject: 'Save Project',
+        toggleDark: 'Toggle dark mode',
+        changeLanguage: 'Change language',
+        hideCharts: 'Hide charts',
+        showCharts: 'Show charts',
+        deleteSelected: 'Delete Selected',
+        deleteUnselected: 'Delete Unselected',
+        color: 'Color',
+        no: 'No.',
+        name: 'Name',
+        date: 'Date',
+        time: 'Time',
+        avg: 'Avg.',
+        illum: 'Illum.',
+        lstar: 'L*',
+        astar: 'a*',
+        bstar: 'b*',
+        hazen: 'Hazen',
+        gardner: 'Gardner',
+        saybolt: 'Saybolt',
+        astm: 'ASTM',
+        ptco: 'Pt-Co',
+        all: 'All',
+        enterProjectName: 'Enter project name',
+        noDataToSave: 'No data to save.',
+        noUnselectedToDelete: 'No unselected samples to delete.',
+        noSamplesToDelete: 'No samples selected to delete.',
+        couldNotSaveFile: 'Could not save file.'
+      },
+      fr: {
+        title: 'Explorateur Colorimétrique',
+        drop: 'Déposer ou sélectionner CSV…',
+        labelIlluminant: 'Illuminant\u00a0:',
+        labelGroupIlluminant: 'Grouper par illuminant\u00a0:',
+        labelHideUnselected: 'Masquer non sélectionnés\u00a0:',
+        searchPlaceholder: 'Rechercher Nom ou N\u00b0',
+        saveProject: 'Enregistrer le projet',
+        toggleDark: 'Basculer mode sombre',
+        changeLanguage: 'Changer de langue',
+        hideCharts: 'Cacher les graphiques',
+        showCharts: 'Afficher les graphiques',
+        deleteSelected: 'Supprimer sélectionnés',
+        deleteUnselected: 'Supprimer non sélectionnés',
+        color: 'Couleur',
+        no: 'N\u00b0',
+        name: 'Nom',
+        date: 'Date',
+        time: 'Heure',
+        avg: 'Moy.',
+        illum: 'Illum.',
+        lstar: 'L*',
+        astar: 'a*',
+        bstar: 'b*',
+        hazen: 'Hazen',
+        gardner: 'Gardner',
+        saybolt: 'Saybolt',
+        astm: 'ASTM',
+        ptco: 'Pt-Co',
+        all: 'Tous',
+        enterProjectName: 'Entrer le nom du projet',
+        noDataToSave: 'Aucune donnée à enregistrer.',
+        noUnselectedToDelete: 'Aucun échantillon non sélectionné à supprimer.',
+        noSamplesToDelete: 'Aucun échantillon sélectionné à supprimer.',
+        couldNotSaveFile: 'Impossible d\'enregistrer le fichier.'
+      }
+    };
     // State management
     const state = {
       // parsed samples are kept entirely in memory and never persisted
@@ -422,25 +497,45 @@
       lastClicked: null,
       // explicit theme string: 'light' or 'dark'
       theme: 'light',
+      language: 'en',
       // id of sample chosen as comparison reference
       compareRef: null,
       // project name for saving/loading
       projectName: document.title,
     };
 
+    function t(key) {
+      return (translations[state.language] && translations[state.language][key]) || translations.en[key] || key;
+    }
+
+    function applyTranslations() {
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const k = el.dataset.i18n;
+        if (k === 'title' && state.projectName) return;
+        if (k) el.textContent = t(k);
+      });
+      document.querySelectorAll('[data-i18n-title]').forEach(el => {
+        const k = el.dataset.i18nTitle;
+        if (k) el.title = t(k);
+      });
+      document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+        const k = el.dataset.i18nPlaceholder;
+        if (k) el.placeholder = t(k);
+      });
+      if (!state.projectName) document.title = t('title');
+    }
+
     function setProjectTitle(name) {
       state.projectName = name;
-      document.title = name || 'Colorimetry Explorer';
+      document.title = name || t('title');
       const h1 = document.querySelector('header h1');
-      if (h1) h1.textContent = name || 'Colorimetry Explorer';
+      if (h1) h1.textContent = name || t('title');
     }
     // Attempt to load persisted UI state
     try {
       const stored = JSON.parse(localStorage.getItem('colorimetryState') || '{}');
       // Only assign known persisted keys to avoid clobbering arrays/sets
-
-      ['activeTab','logScale','smooth','smoothWindow','shadeArea','yMax','groupByIlluminant','hideUnselected','theme','projectName'].forEach(key => {
-
+      ['activeTab','logScale','smooth','smoothWindow','shadeArea','yMax','groupByIlluminant','hideUnselected','theme','language','projectName'].forEach(key => {
         if (stored.hasOwnProperty(key)) state[key] = stored[key];
       });
     } catch (e) {
@@ -465,22 +560,24 @@
     }
     setProjectTitle(state.projectName);
     if (!projectEl) persistState();
+    applyTranslations();
     // Save state
     function persistState() {
       // Only persist UI toggles as requested; samples, selections, search, filters
       // are intentionally not stored across sessions for reliability.
-      const toStore = {
-        activeTab: state.activeTab,
-        logScale: state.logScale,
-        smooth: state.smooth,
-        smoothWindow: state.smoothWindow,
-        shadeArea: state.shadeArea,
-        yMax: state.yMax,
-        groupByIlluminant: state.groupByIlluminant,
-        hideUnselected: state.hideUnselected,
-        theme: state.theme,
-        projectName: state.projectName,
-      };
+        const toStore = {
+          activeTab: state.activeTab,
+          logScale: state.logScale,
+          smooth: state.smooth,
+          smoothWindow: state.smoothWindow,
+          shadeArea: state.shadeArea,
+          yMax: state.yMax,
+          groupByIlluminant: state.groupByIlluminant,
+          hideUnselected: state.hideUnselected,
+          theme: state.theme,
+          language: state.language,
+          projectName: state.projectName,
+        };
       try {
         localStorage.setItem('colorimetryState', JSON.stringify(toStore));
       } catch (err) {
@@ -527,7 +624,7 @@
         } catch (err) {
           if (err.name === 'AbortError') return; // user cancelled
           console.error('Error saving file', err);
-          alert('Could not save file.');
+          alert(t('couldNotSaveFile'));
           return;
 
         }
@@ -876,7 +973,7 @@
       const select = document.getElementById('illuminantFilter');
       const unique = new Set(state.samples.map(s => s.Illuminant).filter(Boolean));
       const prev = state.illuminantFilter;
-      select.innerHTML = '<option value="">All</option>';
+      select.innerHTML = '<option value="">' + t('all') + '</option>';
       unique.forEach(val => {
         const opt = document.createElement('option');
         opt.value = val;
@@ -1946,12 +2043,12 @@
     });
 
     // Delete selected samples button
-    document.getElementById('deleteSamples').addEventListener('click', () => {
-      const ids = Array.from(state.selected);
-      if (ids.length === 0) {
-        alert('No samples selected to delete.');
-        return;
-      }
+      document.getElementById('deleteSamples').addEventListener('click', () => {
+        const ids = Array.from(state.selected);
+        if (ids.length === 0) {
+          alert(t('noSamplesToDelete'));
+          return;
+        }
       // Remove samples whose id is in the selected set
       state.samples = state.samples.filter(s => !state.selected.has(s.id));
       // Clear current selection and reset last clicked if necessary
@@ -1966,12 +2063,12 @@
       drawDetails();
     });
     // Delete unselected samples button
-    document.getElementById('deleteUnselected').addEventListener('click', () => {
-      const remaining = state.samples.filter(s => state.selected.has(s.id));
-      if (remaining.length === state.samples.length) {
-        alert('No unselected samples to delete.');
-        return;
-      }
+      document.getElementById('deleteUnselected').addEventListener('click', () => {
+        const remaining = state.samples.filter(s => state.selected.has(s.id));
+        if (remaining.length === state.samples.length) {
+          alert(t('noUnselectedToDelete'));
+          return;
+        }
       state.samples = remaining;
       if (state.lastClicked && !state.selected.has(state.lastClicked)) {
         state.lastClicked = null;
@@ -1993,16 +2090,26 @@
       persistState();
     });
 
+    const languageToggle = document.getElementById('languageToggle');
+    languageToggle.textContent = state.language === 'en' ? 'FR' : 'EN';
+    languageToggle.addEventListener('click', () => {
+      state.language = state.language === 'en' ? 'fr' : 'en';
+      languageToggle.textContent = state.language === 'en' ? 'FR' : 'EN';
+      applyTranslations();
+      updateIlluminantOptions();
+      persistState();
+    });
+
     const sidebar = document.getElementById('sidebar');
     // Toggle main panel visibility (hide/show charts)
-    const togglePanelBtn = document.getElementById('toggleMainPanel');
-    togglePanelBtn.addEventListener('click', () => {
-      const containerEl = document.getElementById('container');
-      const hide = containerEl.classList.toggle('hide-main');
-      if (hide) sidebar.style.width = '';
-      // Update the button title to reflect the action when clicked next
-      togglePanelBtn.title = hide ? 'Show charts' : 'Hide charts';
-    });
+      const togglePanelBtn = document.getElementById('toggleMainPanel');
+      togglePanelBtn.addEventListener('click', () => {
+        const containerEl = document.getElementById('container');
+        const hide = containerEl.classList.toggle('hide-main');
+        if (hide) sidebar.style.width = '';
+        // Update the button title to reflect the action when clicked next
+        togglePanelBtn.title = hide ? t('showCharts') : t('hideCharts');
+      });
 
     const divider = document.getElementById('divider');
     divider.addEventListener('mousedown', startDrag);
@@ -2028,12 +2135,12 @@
     }
 
     // Save Project button
-    document.getElementById('saveProject').addEventListener('click', async () => {
-      if (state.samples.length === 0) {
-        alert('No data to save.');
-        return;
-      }
-      const input = prompt('Enter project name', state.projectName);
+      document.getElementById('saveProject').addEventListener('click', async () => {
+        if (state.samples.length === 0) {
+          alert(t('noDataToSave'));
+          return;
+        }
+        const input = prompt(t('enterProjectName'), state.projectName);
       if (input === null) return; // user cancelled
       const name = input.trim() || state.projectName;
       setProjectTitle(name);
