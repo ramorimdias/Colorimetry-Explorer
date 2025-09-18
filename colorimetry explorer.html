@@ -217,6 +217,144 @@
       overflow: auto;
       padding: 1rem;
     }
+    .beer-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+    .beer-controls p {
+      flex-basis: 100%;
+      margin: 0;
+    }
+    .beer-controls label {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .beer-controls select,
+    .beer-controls input {
+      font-size: 0.9rem;
+    }
+    .beer-sample-list {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .beer-sample-card {
+      background-color: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .beer-sample-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: 600;
+    }
+    .beer-color-chip {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 1px solid rgba(0, 0, 0, 0.15);
+    }
+    .beer-sample-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      font-size: 0.9rem;
+    }
+    .beer-sample-controls label {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .beer-sample-controls input[type="text"] {
+      min-width: 120px;
+    }
+    .beer-summary {
+      font-size: 0.85rem;
+      opacity: 0.8;
+    }
+    .beer-results {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .beer-swatch-strip {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      padding-bottom: 0.25rem;
+    }
+    .beer-swatch {
+      min-width: 120px;
+      width: 120px;
+      border-radius: 4px;
+      padding: 0.35rem;
+      box-sizing: border-box;
+      font-size: 0.8rem;
+    }
+    .beer-swatch strong {
+      display: block;
+      margin-bottom: 0.25rem;
+    }
+    .beer-linearity {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      align-items: center;
+      font-size: 0.8rem;
+    }
+    .beer-linearity .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 0.35rem;
+    }
+    .beer-error {
+      background-color: var(--warning-bg);
+      color: var(--warning-fg);
+      padding: 0.5rem;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+    .beer-empty {
+      font-size: 0.9rem;
+      opacity: 0.8;
+    }
+    .beer-compare-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+    .beer-compare-card {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem;
+      background-color: var(--panel-bg);
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    .beer-compare-card.disabled {
+      opacity: 0.45;
+    }
+    .beer-compare-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-weight: 600;
+    }
     svg.chart {
       width: 100%;
       /* Default chart height */
@@ -345,6 +483,8 @@
         <button class="active" data-tab="scales">Scales</button>
         <button data-tab="cielab">CIELAB</button>
         <button data-tab="spectrum">Spectrum</button>
+        <button data-tab="beer">Beer-Lambert</button>
+        <button data-tab="beer-compare">Compare Color Estimation</button>
         <button data-tab="compare">Compare</button>
         <button data-tab="details">Details</button>
       </div>
@@ -368,6 +508,28 @@
           <label style="margin-left:1rem">Y max:<input type="number" id="yMaxInput" min="0" step="0.1" style="width:60px"></label>
         </div>
         <svg class="chart" id="spectrumChart" aria-label="Spectrum chart"></svg>
+      </div>
+      <div class="tab-content" id="tab-beer" style="display:none">
+        <div class="beer-controls">
+          <p>Enter the measurement path length for each selected sample to estimate colours using the Beer–Lambert law.</p>
+          <label><input type="checkbox" id="beerClampNeg" checked> Clamp negatives to 0</label>
+          <label><input type="checkbox" id="beerBaseline"> Baseline correction ≥650&nbsp;nm</label>
+          <label><input type="checkbox" id="beerForceOrigin"> Force through origin</label>
+          <label>Color reference:
+            <select id="beerColorRef">
+              <option value="d65">D65 / 10°</option>
+              <option value="c2">C / 2°</option>
+            </select>
+          </label>
+        </div>
+        <div id="beerSampleList" class="beer-sample-list">
+          <div class="beer-empty">Select one or more samples to begin.</div>
+        </div>
+      </div>
+      <div class="tab-content" id="tab-beer-compare" style="display:none">
+        <div id="beerCompareList" class="beer-compare-grid">
+          <div class="beer-empty">No samples selected.</div>
+        </div>
       </div>
       <div class="tab-content" id="tab-compare" style="display:none">
         <table id="compare-table" aria-label="Compare samples">
@@ -500,6 +662,12 @@
       compareRef: null,
       // project name for saving/loading
       projectName: document.title,
+      // beer-lambert options and stored paths
+      beerClampNeg: true,
+      beerBaseline: false,
+      beerForceOrigin: false,
+      beerColorRef: 'd65',
+      beerPaths: {},
     };
 
     function t(key) {
@@ -533,7 +701,7 @@
     try {
       const stored = JSON.parse(localStorage.getItem('colorimetryState') || '{}');
       // Only assign known persisted keys to avoid clobbering arrays/sets
-      ['activeTab','logScale','smooth','smoothWindow','shadeArea','yMax','groupByIlluminant','hideUnselected','theme','language','projectName'].forEach(key => {
+      ['activeTab','logScale','smooth','smoothWindow','shadeArea','yMax','groupByIlluminant','hideUnselected','theme','language','projectName','beerClampNeg','beerBaseline','beerForceOrigin','beerColorRef'].forEach(key => {
         if (stored.hasOwnProperty(key)) state[key] = stored[key];
       });
     } catch (e) {
@@ -546,7 +714,7 @@
         if (proj.samples) state.samples = proj.samples;
         if (proj.selected) state.selected = new Set(proj.selected);
         if (proj.selectedOrder) state.selectedOrder = proj.selectedOrder;
-        ['activeTab','logScale','smooth','smoothWindow','shadeArea','yMax','groupByIlluminant','theme','compareRef','projectName'].forEach(key => {
+        ['activeTab','logScale','smooth','smoothWindow','shadeArea','yMax','groupByIlluminant','theme','compareRef','projectName','beerClampNeg','beerBaseline','beerForceOrigin','beerColorRef','beerPaths'].forEach(key => {
           if (proj.hasOwnProperty(key)) state[key] = proj[key];
         });
       } catch (e) {
@@ -575,6 +743,10 @@
           theme: state.theme,
           language: state.language,
           projectName: state.projectName,
+          beerClampNeg: state.beerClampNeg,
+          beerBaseline: state.beerBaseline,
+          beerForceOrigin: state.beerForceOrigin,
+          beerColorRef: state.beerColorRef,
         };
       try {
         localStorage.setItem('colorimetryState', JSON.stringify(toStore));
@@ -608,6 +780,110 @@
         s.color = COLOR_OPTIONS[idx % COLOR_OPTIONS.length];
         idx++;
       });
+    }
+    // Data for Beer–Lambert colour estimation
+    const BEER_WAVELENGTHS = Array.from({length: 31}, (_, i) => 400 + i * 10);
+    const BEER_XBAR_10 = [0.0191097,0.084736,0.204492,0.314679,0.383734,0.370702,0.302273,0.195618,0.080507,0.016172,0.003816,0.037465,0.117749,0.236491,0.376772,0.529826,0.705224,0.878655,1.01416,1.11852,1.12399,1.03048,0.856297,0.647467,0.431567,0.268329,0.152568,0.0812606,0.0408508,0.0199413,0.00957688];
+    const BEER_YBAR_10 = [0.0020044,0.008756,0.021391,0.038676,0.062077,0.089456,0.128201,0.18519,0.253589,0.339133,0.460777,0.606741,0.761757,0.875211,0.961988,0.991761,0.99734,0.955552,0.868934,0.777405,0.658341,0.527963,0.398057,0.283493,0.179828,0.107633,0.060281,0.0318004,0.0159051,0.0077488,0.00371774];
+    const BEER_ZBAR_10 = [0.0860109,0.389366,0.972542,1.55348,1.96728,1.9948,1.74537,1.31756,0.772125,0.415254,0.218502,0.112044,0.060709,0.030451,0.013676,0.003988,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0];
+    const BEER_D65_SPD = [82.7549,91.486,93.4318,86.6823,104.865,117.008,117.812,114.861,115.923,108.811,109.354,107.802,104.79,107.689,104.405,104.046,100.0,96.3342,95.788,88.6856,90.0062,89.5991,87.6987,83.2886,83.6992,80.0268,80.2146,82.2778,78.2842,69.7213,71.6091];
+    const BEER_XBAR_2 = [0.01431,0.04351,0.13438,0.2839,0.34828,0.3362,0.2908,0.19536,0.09564,0.03201,0.0049,0.0093,0.06327,0.1655,0.2904,0.4334499,0.5945,0.7621,0.9163,1.0263,1.0622,1.0026,0.8544499,0.6424,0.4479,0.2835,0.1649,0.0874,0.04677,0.0227,0.01135916];
+    const BEER_YBAR_2 = [0.000396,0.00121,0.004,0.0116,0.023,0.038,0.06,0.09098,0.13902,0.20802,0.323,0.503,0.71,0.862,0.954,0.9949501,0.995,0.952,0.87,0.757,0.631,0.503,0.381,0.265,0.175,0.107,0.061,0.032,0.017,0.00821,0.004102];
+    const BEER_ZBAR_2 = [0.06785001,0.2074,0.6456,1.3856,1.74706,1.77211,1.6692,1.28764,0.8129501,0.46518,0.272,0.1582,0.07824999,0.04216,0.0203,0.008749999,0.0039,0.0021,0.001650001,0.0011,0.0008,0.00034,0.00019,0.00005,0.00002,0,0,0,0,0,0];
+    const BEER_C_SPD = [63.3,80.6,98.1,112.4,121.5,124.0,123.1,123.8,123.9,120.7,112.1,102.3,96.9,98.0,102.1,105.2,105.3,102.3,97.8,93.2,89.7,88.4,88.1,88.0,87.8,88.2,87.9,86.3,84.0,80.2,76.3];
+    const BEER_REFERENCES = {
+      d65: {
+        label: 'D65 / 10°',
+        xBar: BEER_XBAR_10,
+        yBar: BEER_YBAR_10,
+        zBar: BEER_ZBAR_10,
+        spd: BEER_D65_SPD,
+      },
+      c2: {
+        label: 'C / 2°',
+        xBar: BEER_XBAR_2,
+        yBar: BEER_YBAR_2,
+        zBar: BEER_ZBAR_2,
+        spd: BEER_C_SPD,
+      }
+    };
+    const BEER_DEPTHS = (() => {
+      const depths = new Set([0, 0.033, 0.05, 0.1]);
+      for (let d = 0.2; d <= 2.0001; d += 0.2) depths.add(parseFloat(d.toFixed(3)));
+      return Array.from(depths).sort((a,b) => a - b);
+    })();
+    const beerState = {
+      results: {}
+    };
+    function beerMedian(values) {
+      const nums = values.filter(v => typeof v === 'number' && !isNaN(v));
+      if (nums.length === 0) return 0;
+      const sorted = nums.slice().sort((a,b) => a - b);
+      const mid = Math.floor(sorted.length / 2);
+      if (sorted.length % 2 === 0) return (sorted[mid - 1] + sorted[mid]) / 2;
+      return sorted[mid];
+    }
+    function computeBeerColours(slopes, intercepts, depths, reference) {
+      const spd = reference.spd;
+      const xBar = reference.xBar;
+      const yBar = reference.yBar;
+      const zBar = reference.zBar;
+      const delta = 10;
+      let denom = 0;
+      for (let i = 0; i < BEER_WAVELENGTHS.length; i++) {
+        denom += spd[i] * yBar[i];
+      }
+      const k = 100 / (denom * delta);
+      let Xn = 0, Yn = 0, Zn = 0;
+      for (let i = 0; i < BEER_WAVELENGTHS.length; i++) {
+        Xn += spd[i] * xBar[i];
+        Yn += spd[i] * yBar[i];
+        Zn += spd[i] * zBar[i];
+      }
+      Xn *= k * delta;
+      Yn *= k * delta;
+      Zn *= k * delta;
+      const results = depths.map(depth => {
+        let X = 0, Y = 0, Z = 0;
+        for (let i = 0; i < BEER_WAVELENGTHS.length; i++) {
+          const absorbance = slopes[i] * depth + intercepts[i];
+          const trans = Math.pow(10, -absorbance);
+          X += spd[i] * xBar[i] * trans;
+          Y += spd[i] * yBar[i] * trans;
+          Z += spd[i] * zBar[i] * trans;
+        }
+        X *= k * delta;
+        Y *= k * delta;
+        Z *= k * delta;
+        const eps = 216 / 24389;
+        const kappa = 24389 / 27;
+        const f = (t) => t > eps ? Math.cbrt(t) : (kappa * t + 16) / 116;
+        const xr = X / Xn;
+        const yr = Y / Yn;
+        const zr = Z / Zn;
+        const fx = f(xr);
+        const fy = f(yr);
+        const fz = f(zr);
+        const L = 116 * fy - 16;
+        const a = 500 * (fx - fy);
+        const b = 200 * (fy - fz);
+        const Xnorm = X / 100;
+        const Ynorm = Y / 100;
+        const Znorm = Z / 100;
+        const gamma = (u) => u <= 0.0031308 ? 12.92 * u : 1.055 * Math.pow(u, 1/2.4) - 0.055;
+        let rLin = 3.2406 * Xnorm - 1.5372 * Ynorm - 0.4986 * Znorm;
+        let gLin = -0.9689 * Xnorm + 1.8758 * Ynorm + 0.0415 * Znorm;
+        let bLin = 0.0557 * Xnorm - 0.2040 * Ynorm + 1.0570 * Znorm;
+        const toDisplay = (val) => {
+          const clamped = Math.min(Math.max(val, 0), 1);
+          return Math.round(gamma(clamped) * 255);
+        };
+        const r = toDisplay(rLin);
+        const g = toDisplay(gLin);
+        const bl = toDisplay(bLin);
+        return { depth_m: depth, L, a, b, X, Y, Z, srgb: [r, g, bl] };
+      });
+      return { results, Xn, Yn, Zn };
     }
     function savitzkyGolay(y, windowSize) {
       // Very simple Savitzky-Golay smoothing (no derivative). Assumes windowSize is odd.
@@ -1833,14 +2109,364 @@
     function getSampleColor(sample) {
       return sample.color || COLOR_OPTIONS[0];
     }
+    function getSampleById(id) {
+      return state.samples.find(s => s.id === id);
+    }
+    function beerEscapeId(id) {
+      if (window.CSS && typeof window.CSS.escape === 'function') {
+        return window.CSS.escape(id);
+      }
+      return id.replace(/[^a-zA-Z0-9_-]/g, s => '\\' + s);
+    }
+    function cleanupBeerState(selectedIds) {
+      const set = new Set(selectedIds);
+      if (state.beerPaths) {
+        Object.keys(state.beerPaths).forEach(id => {
+          if (!set.has(id)) delete state.beerPaths[id];
+        });
+      }
+      Object.keys(beerState.results).forEach(id => {
+        if (!set.has(id)) delete beerState.results[id];
+      });
+    }
+    function extractBeerSpectrum(sample) {
+      if (!sample || !Array.isArray(sample.spectrum)) return null;
+      const map = new Map();
+      sample.spectrum.forEach(point => {
+        const wl = Math.round(point.wavelength);
+        if (isFinite(point.absorbance)) map.set(wl, point.absorbance);
+      });
+      const values = [];
+      for (const wl of BEER_WAVELENGTHS) {
+        if (!map.has(wl)) return null;
+        const val = map.get(wl);
+        if (!isFinite(val)) return null;
+        values.push(val);
+      }
+      return values;
+    }
+    function parseBeerPathEntry(entry) {
+      const unit = entry && entry.unit ? entry.unit : 'mm';
+      const original = entry && typeof entry.raw === 'string' ? entry.raw : '';
+      const raw = original.trim();
+      if (!raw) return { raw: '', unit, meters: null, valid: false };
+      const normalized = raw.replace(',', '.');
+      const value = parseFloat(normalized);
+      if (!isFinite(value) || value <= 0) {
+        return { raw, unit, meters: null, valid: false };
+      }
+      let meters = value;
+      if (unit === 'mm') meters = value / 1000;
+      else if (unit === 'cm') meters = value / 100;
+      else if (unit === 'm') meters = value;
+      return { raw, unit, meters, valid: true };
+    }
+    function renderBeerResultsForSample(sampleId, container) {
+      if (!container) {
+        container = document.querySelector(`.beer-results[data-sample-id="${beerEscapeId(sampleId)}"]`);
+      }
+      if (!container) return;
+      container.innerHTML = '';
+      const entry = state.beerPaths && state.beerPaths[sampleId];
+      if (!entry || !entry.raw || !entry.raw.trim()) {
+        const msg = document.createElement('div');
+        msg.className = 'beer-empty';
+        msg.textContent = 'Enter a path length to compute colours.';
+        container.appendChild(msg);
+        return;
+      }
+      const result = beerState.results[sampleId];
+      if (!result) {
+        const msg = document.createElement('div');
+        msg.className = 'beer-empty';
+        msg.textContent = 'Enter a valid numeric path length to compute colours.';
+        container.appendChild(msg);
+        return;
+      }
+      if (result.error) {
+        const err = document.createElement('div');
+        err.className = 'beer-error';
+        err.textContent = result.error;
+        container.appendChild(err);
+        return;
+      }
+      const summary = document.createElement('div');
+      summary.className = 'beer-summary';
+      const ref = BEER_REFERENCES[result.referenceKey] || BEER_REFERENCES.d65;
+      let parts = [`Path ${result.pathRaw} ${result.pathUnit || ''}`.trim(), `Reference ${ref.label}`];
+      if (result.baselineApplied) parts.push(`Baseline shift ${result.baselineShift.toFixed(4)}`);
+      if (result.clampApplied) parts.push('Negatives clamped');
+      summary.textContent = parts.join(' • ');
+      container.appendChild(summary);
+      const strip = document.createElement('div');
+      strip.className = 'beer-swatch-strip';
+      result.colours.forEach(col => {
+        const swatch = document.createElement('div');
+        swatch.className = 'beer-swatch';
+        const [r,g,b] = col.srgb;
+        swatch.style.backgroundColor = `rgb(${r},${g},${b})`;
+        swatch.style.color = col.Y > 50 ? '#000' : '#fff';
+        const hex = '#' + col.srgb.map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+        swatch.innerHTML = `<strong>${(col.depth_m * 100).toFixed(0)} cm</strong>L* ${col.L.toFixed(1)}<br>a* ${col.a.toFixed(1)}<br>b* ${col.b.toFixed(1)}<br>Y ${col.Y.toFixed(1)}%<br>${hex}`;
+        strip.appendChild(swatch);
+      });
+      container.appendChild(strip);
+      const diag = document.createElement('div');
+      diag.className = 'beer-linearity';
+      if (result.singlePoint) {
+        diag.textContent = 'Linearity diagnostics require at least two path lengths. Assuming Beer–Lambert behaviour.';
+      }
+      container.appendChild(diag);
+    }
+    function computeBeerForSample(sampleId) {
+      if (!state.beerPaths) state.beerPaths = {};
+      const entry = state.beerPaths[sampleId] || { raw: '', unit: 'mm' };
+      const parsed = parseBeerPathEntry(entry);
+      if (!parsed.valid) {
+        if (entry.raw && entry.raw.trim()) {
+          beerState.results[sampleId] = { error: 'Enter a positive numeric path length.' };
+        } else {
+          delete beerState.results[sampleId];
+        }
+        renderBeerResultsForSample(sampleId);
+        renderBeerCompareTab();
+        return;
+      }
+      const sample = getSampleById(sampleId);
+      if (!sample) {
+        delete beerState.results[sampleId];
+        renderBeerResultsForSample(sampleId);
+        renderBeerCompareTab();
+        return;
+      }
+      const spectrum = extractBeerSpectrum(sample);
+      if (!spectrum) {
+        beerState.results[sampleId] = { error: 'Spectrum must include absorbance every 10 nm from 400–700 nm.' };
+        renderBeerResultsForSample(sampleId);
+        renderBeerCompareTab();
+        return;
+      }
+      let processed = spectrum.slice();
+      let baselineShift = 0;
+      if (state.beerBaseline) {
+        const tail = [];
+        for (let i = 0; i < BEER_WAVELENGTHS.length; i++) {
+          if (BEER_WAVELENGTHS[i] >= 650) tail.push(processed[i]);
+        }
+        baselineShift = beerMedian(tail);
+        processed = processed.map(v => v - baselineShift);
+      }
+      if (state.beerClampNeg) {
+        processed = processed.map(v => v < 0 ? 0 : v);
+      }
+      const slopes = processed.map(v => v / parsed.meters);
+      const intercepts = processed.map(() => 0);
+      const reference = BEER_REFERENCES[state.beerColorRef] || BEER_REFERENCES.d65;
+      const colourData = computeBeerColours(slopes, intercepts, BEER_DEPTHS, reference);
+      beerState.results[sampleId] = {
+        colours: colourData.results,
+        referenceKey: state.beerColorRef,
+        pathRaw: parsed.raw,
+        pathUnit: parsed.unit,
+        pathMeters: parsed.meters,
+        baselineShift,
+        clampApplied: state.beerClampNeg,
+        baselineApplied: state.beerBaseline,
+        singlePoint: true
+      };
+      renderBeerResultsForSample(sampleId);
+      renderBeerCompareTab();
+    }
+    function renderBeerLambert() {
+      const list = document.getElementById('beerSampleList');
+      if (!list) return;
+      const selectedIds = state.selectedOrder.filter(id => state.selected.has(id));
+      cleanupBeerState(selectedIds);
+      list.innerHTML = '';
+      if (selectedIds.length === 0) {
+        const msg = document.createElement('div');
+        msg.className = 'beer-empty';
+        msg.textContent = 'Select one or more samples to begin.';
+        list.appendChild(msg);
+        renderBeerCompareTab();
+        return;
+      }
+      selectedIds.forEach(id => {
+        const sample = getSampleById(id);
+        if (!sample) return;
+        if (!state.beerPaths) state.beerPaths = {};
+        if (!state.beerPaths[id]) state.beerPaths[id] = { raw: '', unit: 'mm' };
+        const entry = state.beerPaths[id];
+        const card = document.createElement('div');
+        card.className = 'beer-sample-card';
+        card.dataset.sampleId = id;
+        const header = document.createElement('div');
+        header.className = 'beer-sample-header';
+        const chip = document.createElement('span');
+        chip.className = 'beer-color-chip';
+        chip.style.backgroundColor = getSampleColor(sample);
+        header.appendChild(chip);
+        const name = document.createElement('span');
+        name.textContent = sample['Name'] || sample['No.'] || 'Sample';
+        header.appendChild(name);
+        if (sample['No.']) {
+          const code = document.createElement('span');
+          code.style.fontSize = '0.8rem';
+          code.style.opacity = '0.7';
+          code.textContent = `#${sample['No.']}`;
+          header.appendChild(code);
+        }
+        card.appendChild(header);
+        const controls = document.createElement('div');
+        controls.className = 'beer-sample-controls';
+        const pathLabel = document.createElement('label');
+        pathLabel.textContent = 'Path length:';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = 'e.g. 10';
+        input.value = entry.raw || '';
+        input.dataset.sampleId = id;
+        pathLabel.appendChild(input);
+        controls.appendChild(pathLabel);
+        const unitLabel = document.createElement('label');
+        unitLabel.textContent = 'Unit:';
+        const select = document.createElement('select');
+        ['mm','cm','m'].forEach(unit => {
+          const opt = document.createElement('option');
+          opt.value = unit;
+          opt.textContent = unit;
+          select.appendChild(opt);
+        });
+        select.value = entry.unit || 'mm';
+        unitLabel.appendChild(select);
+        controls.appendChild(unitLabel);
+        input.addEventListener('input', () => {
+          state.beerPaths[id] = { raw: input.value, unit: select.value };
+          computeBeerForSample(id);
+        });
+        select.addEventListener('change', () => {
+          state.beerPaths[id] = { raw: input.value, unit: select.value };
+          computeBeerForSample(id);
+        });
+        card.appendChild(controls);
+        const resultsDiv = document.createElement('div');
+        resultsDiv.className = 'beer-results';
+        resultsDiv.dataset.sampleId = id;
+        card.appendChild(resultsDiv);
+        list.appendChild(card);
+        if (entry.raw && entry.raw.trim()) {
+          computeBeerForSample(id);
+        } else {
+          renderBeerResultsForSample(id, resultsDiv);
+        }
+      });
+      renderBeerCompareTab();
+    }
+    function renderBeerCompareTab() {
+      const container = document.getElementById('beerCompareList');
+      if (!container) return;
+      container.innerHTML = '';
+      const selectedIds = state.selectedOrder.filter(id => state.selected.has(id));
+      if (selectedIds.length === 0) {
+        const msg = document.createElement('div');
+        msg.className = 'beer-empty';
+        msg.textContent = 'No samples selected.';
+        container.appendChild(msg);
+        return;
+      }
+      const maxSwatches = 12;
+      selectedIds.forEach(id => {
+        const sample = getSampleById(id);
+        if (!sample) return;
+        const card = document.createElement('div');
+        card.className = 'beer-compare-card';
+        const header = document.createElement('div');
+        header.className = 'beer-compare-header';
+        const chip = document.createElement('span');
+        chip.className = 'beer-color-chip';
+        chip.style.backgroundColor = getSampleColor(sample);
+        header.appendChild(chip);
+        const title = document.createElement('span');
+        title.textContent = sample['Name'] || sample['No.'] || 'Sample';
+        header.appendChild(title);
+        card.appendChild(header);
+        const entry = state.beerPaths && state.beerPaths[id];
+        const result = beerState.results[id];
+        if (!entry || !entry.raw || !entry.raw.trim()) {
+          card.classList.add('disabled');
+          const msg = document.createElement('div');
+          msg.className = 'beer-empty';
+          msg.textContent = 'Enter a path length on the Beer–Lambert tab.';
+          card.appendChild(msg);
+        } else if (!result || result.error) {
+          card.classList.add('disabled');
+          const err = document.createElement('div');
+          err.className = 'beer-error';
+          err.textContent = result && result.error ? result.error : 'Unable to compute colours.';
+          card.appendChild(err);
+        } else {
+          const ref = BEER_REFERENCES[result.referenceKey] || BEER_REFERENCES.d65;
+          const summary = document.createElement('div');
+          summary.className = 'beer-summary';
+          summary.textContent = `Path ${result.pathRaw} ${result.pathUnit || ''} • ${ref.label}`;
+          card.appendChild(summary);
+          const strip = document.createElement('div');
+          strip.className = 'beer-swatch-strip';
+          result.colours.slice(0, maxSwatches).forEach(col => {
+            const swatch = document.createElement('div');
+            swatch.className = 'beer-swatch';
+            const [r,g,b] = col.srgb;
+            swatch.style.backgroundColor = `rgb(${r},${g},${b})`;
+            swatch.style.color = col.Y > 50 ? '#000' : '#fff';
+            const hex = '#' + col.srgb.map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+            swatch.innerHTML = `<strong>${(col.depth_m * 100).toFixed(0)} cm</strong>L* ${col.L.toFixed(1)}<br>a* ${col.a.toFixed(1)}<br>b* ${col.b.toFixed(1)}<br>Y ${col.Y.toFixed(1)}%<br>${hex}`;
+            strip.appendChild(swatch);
+          });
+          card.appendChild(strip);
+          if (result.colours.length > maxSwatches) {
+            const more = document.createElement('div');
+            more.className = 'beer-summary';
+            more.textContent = `+${result.colours.length - maxSwatches} more depths`;
+            card.appendChild(more);
+          }
+          if (result.singlePoint) {
+            const note = document.createElement('div');
+            note.className = 'beer-summary';
+            note.textContent = 'Single absorbance measurement; assumes linear Beer–Lambert scaling.';
+            card.appendChild(note);
+          }
+        }
+        container.appendChild(card);
+      });
+    }
+    function recomputeAllBeerSamples() {
+      const selectedIds = state.selectedOrder.filter(id => state.selected.has(id));
+      selectedIds.forEach(id => {
+        const entry = state.beerPaths && state.beerPaths[id];
+        if (entry && entry.raw && entry.raw.trim()) {
+          computeBeerForSample(id);
+        } else {
+          delete beerState.results[id];
+          renderBeerResultsForSample(id);
+        }
+      });
+      renderBeerCompareTab();
+    }
     function drawAll() {
       updateTable();
+      renderBeerLambert();
       if (state.activeTab === 'scales') drawScales();
       else if (state.activeTab === 'cielab') {
         drawAB();
         drawL();
       }
       else if (state.activeTab === 'spectrum') drawSpectrum();
+      else if (state.activeTab === 'beer') {
+        // Beer-Lambert tab is DOM-driven; nothing extra to draw here.
+      }
+      else if (state.activeTab === 'beer-compare') {
+        renderBeerCompareTab();
+      }
       else if (state.activeTab === 'compare') drawCompare();
       else if (state.activeTab === 'details') drawDetails();
     }
@@ -2004,6 +2630,43 @@
       if (state.activeTab === 'spectrum') drawSpectrum();
     });
 
+    const beerClamp = document.getElementById('beerClampNeg');
+    if (beerClamp) {
+      beerClamp.checked = !!state.beerClampNeg;
+      beerClamp.addEventListener('change', (ev) => {
+        state.beerClampNeg = ev.target.checked;
+        persistState();
+        recomputeAllBeerSamples();
+      });
+    }
+    const beerBaseline = document.getElementById('beerBaseline');
+    if (beerBaseline) {
+      beerBaseline.checked = !!state.beerBaseline;
+      beerBaseline.addEventListener('change', (ev) => {
+        state.beerBaseline = ev.target.checked;
+        persistState();
+        recomputeAllBeerSamples();
+      });
+    }
+    const beerForce = document.getElementById('beerForceOrigin');
+    if (beerForce) {
+      beerForce.checked = !!state.beerForceOrigin;
+      beerForce.addEventListener('change', (ev) => {
+        state.beerForceOrigin = ev.target.checked;
+        persistState();
+        recomputeAllBeerSamples();
+      });
+    }
+    const beerRef = document.getElementById('beerColorRef');
+    if (beerRef) {
+      beerRef.value = state.beerColorRef || 'd65';
+      beerRef.addEventListener('change', (ev) => {
+        state.beerColorRef = ev.target.value;
+        persistState();
+        recomputeAllBeerSamples();
+      });
+    }
+
     // Delete selected samples button
       document.getElementById('deleteSamples').addEventListener('click', () => {
         const ids = Array.from(state.selected);
@@ -2152,9 +2815,17 @@
 
     updateIlluminantOptions();
     updateTable();
+    renderBeerLambert();
+    renderBeerCompareTab();
     if (state.activeTab === 'scales') drawScales();
     else if (state.activeTab === 'cielab') { drawAB(); drawL(); }
     else if (state.activeTab === 'spectrum') drawSpectrum();
+    else if (state.activeTab === 'beer') {
+      renderBeerLambert();
+    }
+    else if (state.activeTab === 'beer-compare') {
+      renderBeerCompareTab();
+    }
     else if (state.activeTab === 'compare') drawCompare();
     else drawDetails();
     // restore selected sample colors and details
