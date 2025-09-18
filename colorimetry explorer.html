@@ -2589,11 +2589,15 @@
         unitLabel.appendChild(select);
         controls.appendChild(unitLabel);
         input.addEventListener('input', () => {
-          entry.main.raw = input.value;
+          const current = ensureBeerEntry(id);
+          current.main.raw = input.value;
+          state.beerPaths[id] = current;
           computeBeerForSample(id);
         });
         select.addEventListener('change', () => {
-          entry.main.unit = select.value;
+          const current = ensureBeerEntry(id);
+          current.main.unit = select.value;
+          state.beerPaths[id] = current;
           computeBeerForSample(id);
         });
         card.appendChild(controls);
@@ -2653,21 +2657,33 @@
             sampleSelect.disabled = !toggle.checked;
           }
           toggle.addEventListener('change', () => {
-            extra.enabled = toggle.checked;
+            const current = ensureBeerEntry(id);
+            const currentExtra = current.extras[extraIndex];
+            currentExtra.enabled = toggle.checked;
+            state.beerPaths[id] = current;
             updateDisabledState();
             computeBeerForSample(id);
           });
           extraInput.addEventListener('input', () => {
-            extra.raw = extraInput.value;
-            if (extra.enabled) computeBeerForSample(id);
+            const current = ensureBeerEntry(id);
+            const currentExtra = current.extras[extraIndex];
+            currentExtra.raw = extraInput.value;
+            state.beerPaths[id] = current;
+            if (currentExtra.enabled) computeBeerForSample(id);
           });
           unitSelect.addEventListener('change', () => {
-            extra.unit = unitSelect.value;
-            if (extra.enabled) computeBeerForSample(id);
+            const current = ensureBeerEntry(id);
+            const currentExtra = current.extras[extraIndex];
+            currentExtra.unit = unitSelect.value;
+            state.beerPaths[id] = current;
+            if (currentExtra.enabled) computeBeerForSample(id);
           });
           sampleSelect.addEventListener('change', () => {
-            extra.sourceId = sampleSelect.value;
-            if (extra.enabled) computeBeerForSample(id);
+            const current = ensureBeerEntry(id);
+            const currentExtra = current.extras[extraIndex];
+            currentExtra.sourceId = sampleSelect.value;
+            state.beerPaths[id] = current;
+            if (currentExtra.enabled) computeBeerForSample(id);
           });
           updateDisabledState();
           extrasWrapper.appendChild(row);
