@@ -279,6 +279,33 @@
     .beer-sample-controls input[type="text"] {
       min-width: 120px;
     }
+    .beer-extra-wrapper {
+      border-top: 1px solid var(--border);
+      margin-top: 0.5rem;
+      padding-top: 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .beer-extra-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      font-size: 0.85rem;
+    }
+    .beer-extra-row.disabled {
+      opacity: 0.6;
+    }
+    .beer-extra-row label {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+    .beer-extra-row input[type="text"],
+    .beer-extra-row select {
+      font-size: 0.85rem;
+    }
     .beer-summary {
       font-size: 0.85rem;
       opacity: 0.8;
@@ -321,6 +348,14 @@
       display: inline-block;
       margin-right: 0.35rem;
     }
+    .beer-path-list {
+      margin: 0;
+      padding-left: 1.1rem;
+      font-size: 0.85rem;
+    }
+    .beer-path-list li {
+      margin-bottom: 0.2rem;
+    }
     .beer-error {
       background-color: var(--warning-bg);
       color: var(--warning-fg);
@@ -333,27 +368,53 @@
       opacity: 0.8;
     }
     .beer-compare-grid {
-      display: flex;
-      flex-direction: column;
-      gap: 1rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 0.75rem;
     }
     .beer-compare-card {
       border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 1rem;
+      padding: 0.75rem;
       background-color: var(--panel-bg);
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
+      gap: 0.35rem;
+      min-height: 140px;
     }
     .beer-compare-card.disabled {
-      opacity: 0.45;
+      opacity: 0.35;
     }
     .beer-compare-header {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.4rem;
       font-weight: 600;
+      font-size: 0.9rem;
+    }
+    .beer-compare-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin-top: 0.25rem;
+    }
+    .beer-compare-swatch {
+      width: 64px;
+      height: 64px;
+      border-radius: 4px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 0.2rem;
+      font-size: 0.7rem;
+      font-weight: 600;
+      box-sizing: border-box;
+    }
+    .beer-compare-swatch span {
+      background-color: rgba(0,0,0,0.45);
+      color: #fff;
+      border-radius: 3px;
+      padding: 0 0.2rem;
     }
     svg.chart {
       width: 100%;
@@ -812,6 +873,45 @@
       for (let d = 0.2; d <= 2.0001; d += 0.2) depths.add(parseFloat(d.toFixed(3)));
       return Array.from(depths).sort((a,b) => a - b);
     })();
+    const BEER_PATH_UNITS = ['mm','cm','m'];
+    function normalizeBeerUnit(unit) {
+      return BEER_PATH_UNITS.includes(unit) ? unit : 'mm';
+    }
+    function makeDefaultBeerExtra() {
+      return { enabled: false, raw: '', unit: 'mm', sourceId: '' };
+    }
+    function normalizeBeerEntryStructure(entry) {
+      const normalized = {
+        main: { raw: '', unit: 'mm' },
+        extras: [makeDefaultBeerExtra(), makeDefaultBeerExtra()]
+      };
+      if (!entry) return normalized;
+      if (typeof entry.raw === 'string' || entry.unit) {
+        normalized.main.raw = typeof entry.raw === 'string' ? entry.raw : '';
+        normalized.main.unit = normalizeBeerUnit(entry.unit);
+        return normalized;
+      }
+      if (entry.main) {
+        normalized.main.raw = typeof entry.main.raw === 'string' ? entry.main.raw : '';
+        normalized.main.unit = normalizeBeerUnit(entry.main.unit);
+      }
+      if (Array.isArray(entry.extras) && entry.extras.length) {
+        normalized.extras = entry.extras.slice(0, 2).map(extra => ({
+          enabled: !!extra.enabled,
+          raw: typeof extra.raw === 'string' ? extra.raw : '',
+          unit: normalizeBeerUnit(extra.unit),
+          sourceId: extra && extra.sourceId != null ? String(extra.sourceId) : ''
+        }));
+      }
+      while (normalized.extras.length < 2) normalized.extras.push(makeDefaultBeerExtra());
+      return normalized;
+    }
+    function ensureBeerEntry(sampleId) {
+      if (!state.beerPaths) state.beerPaths = {};
+      const normalized = normalizeBeerEntryStructure(state.beerPaths[sampleId]);
+      state.beerPaths[sampleId] = normalized;
+      return normalized;
+    }
     const beerState = {
       results: {}
     };
@@ -2112,14 +2212,23 @@
     function getSampleById(id) {
       return state.samples.find(s => s.id === id);
     }
-    function beerEscapeId(id) {
-      if (window.CSS && typeof window.CSS.escape === 'function') {
-        return window.CSS.escape(id);
-      }
-      return id.replace(/[^a-zA-Z0-9_-]/g, s => '\\' + s);
+    function beerFindSampleById(id) {
+      if (id == null) return null;
+      return state.samples.find(s => String(s.id) === String(id)) || null;
     }
-    function cleanupBeerState(selectedIds) {
-      const set = new Set(selectedIds);
+    function getSampleLabel(sample) {
+      if (!sample) return '';
+      return sample['Name'] || sample['No.'] || 'Sample';
+    }
+    function beerEscapeId(id) {
+      const str = String(id);
+      if (window.CSS && typeof window.CSS.escape === 'function') {
+        return window.CSS.escape(str);
+      }
+      return str.replace(/[^a-zA-Z0-9_-]/g, s => '\\' + s);
+    }
+    function cleanupBeerState(validIds) {
+      const set = new Set((validIds || []).map(id => String(id)));
       if (state.beerPaths) {
         Object.keys(state.beerPaths).forEach(id => {
           if (!set.has(id)) delete state.beerPaths[id];
@@ -2146,7 +2255,7 @@
       return values;
     }
     function parseBeerPathEntry(entry) {
-      const unit = entry && entry.unit ? entry.unit : 'mm';
+      const unit = normalizeBeerUnit(entry && entry.unit ? entry.unit : 'mm');
       const original = entry && typeof entry.raw === 'string' ? entry.raw : '';
       const raw = original.trim();
       if (!raw) return { raw: '', unit, meters: null, valid: false };
@@ -2167,8 +2276,8 @@
       }
       if (!container) return;
       container.innerHTML = '';
-      const entry = state.beerPaths && state.beerPaths[sampleId];
-      if (!entry || !entry.raw || !entry.raw.trim()) {
+      const entry = ensureBeerEntry(sampleId);
+      if (!entry.main.raw || !entry.main.raw.trim()) {
         const msg = document.createElement('div');
         msg.className = 'beer-empty';
         msg.textContent = 'Enter a path length to compute colours.';
@@ -2190,14 +2299,34 @@
         container.appendChild(err);
         return;
       }
+      const ref = BEER_REFERENCES[result.referenceKey] || BEER_REFERENCES.d65;
+      const measurementCount = result.pathDetails ? result.pathDetails.length : 1;
       const summary = document.createElement('div');
       summary.className = 'beer-summary';
-      const ref = BEER_REFERENCES[result.referenceKey] || BEER_REFERENCES.d65;
-      let parts = [`Path ${result.pathRaw} ${result.pathUnit || ''}`.trim(), `Reference ${ref.label}`];
-      if (result.baselineApplied) parts.push(`Baseline shift ${result.baselineShift.toFixed(4)}`);
-      if (result.clampApplied) parts.push('Negatives clamped');
-      summary.textContent = parts.join(' • ');
+      const summaryParts = [`Reference ${ref.label}`, `${measurementCount} path length${measurementCount === 1 ? '' : 's'}`];
+      if (result.baselineApplied) summaryParts.push('Baseline correction');
+      if (result.clampApplied) summaryParts.push('Negatives clamped');
+      summary.textContent = summaryParts.join(' • ');
       container.appendChild(summary);
+      if (result.pathDetails && result.pathDetails.length) {
+        const list = document.createElement('ul');
+        list.className = 'beer-path-list';
+        result.pathDetails.forEach((detail, idx) => {
+          const li = document.createElement('li');
+          const label = detail.label || (idx === 0 ? 'Primary' : `Extra ${idx}`);
+          const unit = detail.pathUnit || 'mm';
+          const baseText = detail.pathRaw ? `${detail.pathRaw} ${unit}`.trim() : `${detail.pathMeters.toFixed(4)} m`;
+          const origin = detail.sampleName || '';
+          let text = `${label}: ${baseText}`;
+          if (origin) text += ` • ${origin}`;
+          if (result.baselineApplied && typeof detail.baselineShift === 'number') {
+            text += ` • baseline shift ${detail.baselineShift.toFixed(4)}`;
+          }
+          li.textContent = text;
+          list.appendChild(li);
+        });
+        container.appendChild(list);
+      }
       const strip = document.createElement('div');
       strip.className = 'beer-swatch-strip';
       result.colours.forEach(col => {
@@ -2215,15 +2344,26 @@
       diag.className = 'beer-linearity';
       if (result.singlePoint) {
         diag.textContent = 'Linearity diagnostics require at least two path lengths. Assuming Beer–Lambert behaviour.';
+        container.appendChild(diag);
+      } else if (result.r2) {
+        const parts = [];
+        Object.keys(result.r2).forEach(key => {
+          const value = result.r2[key];
+          if (typeof value === 'number' && !isNaN(value)) {
+            parts.push(`${key} nm R² ${value.toFixed(3)}`);
+          }
+        });
+        if (parts.length) {
+          diag.textContent = `Linearity: ${parts.join(' • ')}`;
+          container.appendChild(diag);
+        }
       }
-      container.appendChild(diag);
     }
     function computeBeerForSample(sampleId) {
-      if (!state.beerPaths) state.beerPaths = {};
-      const entry = state.beerPaths[sampleId] || { raw: '', unit: 'mm' };
-      const parsed = parseBeerPathEntry(entry);
-      if (!parsed.valid) {
-        if (entry.raw && entry.raw.trim()) {
+      const entry = ensureBeerEntry(sampleId);
+      const parsedMain = parseBeerPathEntry(entry.main);
+      if (!parsedMain.valid) {
+        if (entry.main.raw && entry.main.raw.trim()) {
           beerState.results[sampleId] = { error: 'Enter a positive numeric path length.' };
         } else {
           delete beerState.results[sampleId];
@@ -2232,47 +2372,157 @@
         renderBeerCompareTab();
         return;
       }
-      const sample = getSampleById(sampleId);
+      const sample = beerFindSampleById(sampleId);
       if (!sample) {
         delete beerState.results[sampleId];
         renderBeerResultsForSample(sampleId);
         renderBeerCompareTab();
         return;
       }
-      const spectrum = extractBeerSpectrum(sample);
-      if (!spectrum) {
-        beerState.results[sampleId] = { error: 'Spectrum must include absorbance every 10 nm from 400–700 nm.' };
+      const measurementData = [];
+      const issues = [];
+      function addMeasurement(parsed, sampleObj, label) {
+        if (!parsed.valid) {
+          issues.push(`${label}: enter a positive numeric path length.`);
+          return;
+        }
+        if (!sampleObj) {
+          issues.push(`${label}: select a sample with absorbance data.`);
+          return;
+        }
+        const spectrum = extractBeerSpectrum(sampleObj);
+        if (!spectrum) {
+          issues.push(`${label}: selected sample does not include absorbance for 400–700 nm.`);
+          return;
+        }
+        let processed = spectrum.slice();
+        let baselineShift = 0;
+        if (state.beerBaseline) {
+          const tail = [];
+          for (let i = 0; i < BEER_WAVELENGTHS.length; i++) {
+            if (BEER_WAVELENGTHS[i] >= 650) tail.push(processed[i]);
+          }
+          baselineShift = beerMedian(tail);
+          processed = processed.map(v => v - baselineShift);
+        }
+        if (state.beerClampNeg) {
+          processed = processed.map(v => v < 0 ? 0 : v);
+        }
+        measurementData.push({
+          parsed,
+          sampleId: sampleObj.id,
+          sampleName: getSampleLabel(sampleObj),
+          processed,
+          baselineShift,
+          label
+        });
+      }
+      addMeasurement(parsedMain, sample, 'Primary');
+      entry.extras.forEach((extra, idx) => {
+        if (!extra || !extra.enabled) return;
+        if (!extra.sourceId) {
+          issues.push(`Extra ${idx + 1}: select a sample to supply absorbance data.`);
+          return;
+        }
+        const parsed = parseBeerPathEntry(extra);
+        const extraSample = beerFindSampleById(extra.sourceId);
+        addMeasurement(parsed, extraSample, `Extra ${idx + 1}`);
+      });
+      if (issues.length) {
+        beerState.results[sampleId] = { error: issues.join(' ') };
         renderBeerResultsForSample(sampleId);
         renderBeerCompareTab();
         return;
       }
-      let processed = spectrum.slice();
-      let baselineShift = 0;
-      if (state.beerBaseline) {
-        const tail = [];
-        for (let i = 0; i < BEER_WAVELENGTHS.length; i++) {
-          if (BEER_WAVELENGTHS[i] >= 650) tail.push(processed[i]);
+      const measurementCount = measurementData.length;
+      if (measurementCount === 0) {
+        beerState.results[sampleId] = { error: 'No valid path length data available.' };
+        renderBeerResultsForSample(sampleId);
+        renderBeerCompareTab();
+        return;
+      }
+      const slopes = new Array(BEER_WAVELENGTHS.length).fill(0);
+      const intercepts = new Array(BEER_WAVELENGTHS.length).fill(0);
+      const pathMeters = measurementData.map(m => m.parsed.meters);
+      for (let i = 0; i < BEER_WAVELENGTHS.length; i++) {
+        const yVals = measurementData.map(m => m.processed[i]);
+        if (measurementCount === 1) {
+          slopes[i] = yVals[0] / pathMeters[0];
+          intercepts[i] = 0;
+        } else if (state.beerForceOrigin) {
+          let num = 0;
+          let den = 0;
+          for (let j = 0; j < measurementCount; j++) {
+            const x = pathMeters[j];
+            num += x * yVals[j];
+            den += x * x;
+          }
+          slopes[i] = den === 0 ? 0 : num / den;
+          intercepts[i] = 0;
+        } else {
+          let sumX = 0, sumY = 0, sumXX = 0, sumXY = 0;
+          for (let j = 0; j < measurementCount; j++) {
+            const x = pathMeters[j];
+            const y = yVals[j];
+            sumX += x;
+            sumY += y;
+            sumXX += x * x;
+            sumXY += x * y;
+          }
+          const denom = measurementCount * sumXX - sumX * sumX;
+          if (Math.abs(denom) < 1e-12) {
+            slopes[i] = 0;
+            intercepts[i] = sumY / measurementCount;
+          } else {
+            slopes[i] = (measurementCount * sumXY - sumX * sumY) / denom;
+            intercepts[i] = (sumY - slopes[i] * sumX) / measurementCount;
+          }
         }
-        baselineShift = beerMedian(tail);
-        processed = processed.map(v => v - baselineShift);
       }
-      if (state.beerClampNeg) {
-        processed = processed.map(v => v < 0 ? 0 : v);
-      }
-      const slopes = processed.map(v => v / parsed.meters);
-      const intercepts = processed.map(() => 0);
       const reference = BEER_REFERENCES[state.beerColorRef] || BEER_REFERENCES.d65;
       const colourData = computeBeerColours(slopes, intercepts, BEER_DEPTHS, reference);
+      const diag = {};
+      if (measurementCount > 1) {
+        [450, 500, 560].forEach(wl => {
+          const idx = (wl - 400) / 10;
+          if (idx < 0 || idx >= BEER_WAVELENGTHS.length) return;
+          const yVals = measurementData.map(m => m.processed[idx]);
+          let mean = 0;
+          yVals.forEach(v => { mean += v; });
+          mean /= measurementCount;
+          let ssTot = 0;
+          let ssRes = 0;
+          for (let j = 0; j < measurementCount; j++) {
+            const x = pathMeters[j];
+            const pred = slopes[idx] * x + intercepts[idx];
+            const diff = yVals[j] - mean;
+            ssTot += diff * diff;
+            const resid = yVals[j] - pred;
+            ssRes += resid * resid;
+          }
+          diag[wl] = ssTot === 0 ? 1 : 1 - ssRes / ssTot;
+        });
+      }
       beerState.results[sampleId] = {
         colours: colourData.results,
         referenceKey: state.beerColorRef,
-        pathRaw: parsed.raw,
-        pathUnit: parsed.unit,
-        pathMeters: parsed.meters,
-        baselineShift,
+        pathRaw: parsedMain.raw,
+        pathUnit: parsedMain.unit,
+        pathMeters: parsedMain.meters,
         clampApplied: state.beerClampNeg,
         baselineApplied: state.beerBaseline,
-        singlePoint: true
+        baselineShift: measurementData[0] ? measurementData[0].baselineShift : 0,
+        pathDetails: measurementData.map(m => ({
+          label: m.label,
+          pathRaw: m.parsed.raw,
+          pathUnit: m.parsed.unit,
+          pathMeters: m.parsed.meters,
+          sampleId: m.sampleId,
+          sampleName: m.sampleName,
+          baselineShift: m.baselineShift
+        })),
+        singlePoint: measurementCount === 1,
+        r2: diag
       };
       renderBeerResultsForSample(sampleId);
       renderBeerCompareTab();
@@ -2281,7 +2531,7 @@
       const list = document.getElementById('beerSampleList');
       if (!list) return;
       const selectedIds = state.selectedOrder.filter(id => state.selected.has(id));
-      cleanupBeerState(selectedIds);
+      cleanupBeerState(state.samples.map(s => s.id));
       list.innerHTML = '';
       if (selectedIds.length === 0) {
         const msg = document.createElement('div');
@@ -2294,9 +2544,7 @@
       selectedIds.forEach(id => {
         const sample = getSampleById(id);
         if (!sample) return;
-        if (!state.beerPaths) state.beerPaths = {};
-        if (!state.beerPaths[id]) state.beerPaths[id] = { raw: '', unit: 'mm' };
-        const entry = state.beerPaths[id];
+        const entry = ensureBeerEntry(id);
         const card = document.createElement('div');
         card.className = 'beer-sample-card';
         card.dataset.sampleId = id;
@@ -2307,7 +2555,7 @@
         chip.style.backgroundColor = getSampleColor(sample);
         header.appendChild(chip);
         const name = document.createElement('span');
-        name.textContent = sample['Name'] || sample['No.'] || 'Sample';
+        name.textContent = getSampleLabel(sample);
         header.appendChild(name);
         if (sample['No.']) {
           const code = document.createElement('span');
@@ -2324,37 +2572,113 @@
         const input = document.createElement('input');
         input.type = 'text';
         input.placeholder = 'e.g. 10';
-        input.value = entry.raw || '';
+        input.value = entry.main.raw || '';
         input.dataset.sampleId = id;
         pathLabel.appendChild(input);
         controls.appendChild(pathLabel);
         const unitLabel = document.createElement('label');
         unitLabel.textContent = 'Unit:';
         const select = document.createElement('select');
-        ['mm','cm','m'].forEach(unit => {
+        BEER_PATH_UNITS.forEach(unit => {
           const opt = document.createElement('option');
           opt.value = unit;
           opt.textContent = unit;
           select.appendChild(opt);
         });
-        select.value = entry.unit || 'mm';
+        select.value = entry.main.unit || 'mm';
         unitLabel.appendChild(select);
         controls.appendChild(unitLabel);
         input.addEventListener('input', () => {
-          state.beerPaths[id] = { raw: input.value, unit: select.value };
+          entry.main.raw = input.value;
           computeBeerForSample(id);
         });
         select.addEventListener('change', () => {
-          state.beerPaths[id] = { raw: input.value, unit: select.value };
+          entry.main.unit = select.value;
           computeBeerForSample(id);
         });
         card.appendChild(controls);
+        const extrasWrapper = document.createElement('div');
+        extrasWrapper.className = 'beer-extra-wrapper';
+        entry.extras.forEach((extra, extraIndex) => {
+          const row = document.createElement('div');
+          row.className = 'beer-extra-row';
+          if (!extra.enabled) row.classList.add('disabled');
+          const toggleLabel = document.createElement('label');
+          const toggle = document.createElement('input');
+          toggle.type = 'checkbox';
+          toggle.checked = !!extra.enabled;
+          toggleLabel.appendChild(toggle);
+          toggleLabel.appendChild(document.createTextNode(`Extra path ${extraIndex + 1}`));
+          row.appendChild(toggleLabel);
+          const extraInput = document.createElement('input');
+          extraInput.type = 'text';
+          extraInput.placeholder = 'Length';
+          extraInput.value = extra.raw || '';
+          extraInput.disabled = !extra.enabled;
+          row.appendChild(extraInput);
+          const unitSelect = document.createElement('select');
+          BEER_PATH_UNITS.forEach(unit => {
+            const opt = document.createElement('option');
+            opt.value = unit;
+            opt.textContent = unit;
+            unitSelect.appendChild(opt);
+          });
+          unitSelect.value = extra.unit || 'mm';
+          unitSelect.disabled = !extra.enabled;
+          row.appendChild(unitSelect);
+          const sampleSelect = document.createElement('select');
+          sampleSelect.disabled = !extra.enabled;
+          const placeholder = document.createElement('option');
+          placeholder.value = '';
+          placeholder.textContent = 'Select sample';
+          sampleSelect.appendChild(placeholder);
+          state.samples.forEach(smpl => {
+            const opt = document.createElement('option');
+            opt.value = String(smpl.id);
+            const label = getSampleLabel(smpl);
+            if (smpl['No.'] && smpl['No.'] !== label) {
+              opt.textContent = `${label} (#${smpl['No.']})`;
+            } else {
+              opt.textContent = label;
+            }
+            if (String(extra.sourceId) === String(smpl.id)) opt.selected = true;
+            sampleSelect.appendChild(opt);
+          });
+          sampleSelect.value = extra.sourceId ? String(extra.sourceId) : '';
+          row.appendChild(sampleSelect);
+          function updateDisabledState() {
+            row.classList.toggle('disabled', !toggle.checked);
+            extraInput.disabled = !toggle.checked;
+            unitSelect.disabled = !toggle.checked;
+            sampleSelect.disabled = !toggle.checked;
+          }
+          toggle.addEventListener('change', () => {
+            extra.enabled = toggle.checked;
+            updateDisabledState();
+            computeBeerForSample(id);
+          });
+          extraInput.addEventListener('input', () => {
+            extra.raw = extraInput.value;
+            if (extra.enabled) computeBeerForSample(id);
+          });
+          unitSelect.addEventListener('change', () => {
+            extra.unit = unitSelect.value;
+            if (extra.enabled) computeBeerForSample(id);
+          });
+          sampleSelect.addEventListener('change', () => {
+            extra.sourceId = sampleSelect.value;
+            if (extra.enabled) computeBeerForSample(id);
+          });
+          updateDisabledState();
+          extrasWrapper.appendChild(row);
+        });
+        card.appendChild(extrasWrapper);
         const resultsDiv = document.createElement('div');
         resultsDiv.className = 'beer-results';
         resultsDiv.dataset.sampleId = id;
         card.appendChild(resultsDiv);
         list.appendChild(card);
-        if (entry.raw && entry.raw.trim()) {
+        if (entry.main.raw && entry.main.raw.trim()) {
           computeBeerForSample(id);
         } else {
           renderBeerResultsForSample(id, resultsDiv);
@@ -2374,7 +2698,6 @@
         container.appendChild(msg);
         return;
       }
-      const maxSwatches = 12;
       selectedIds.forEach(id => {
         const sample = getSampleById(id);
         if (!sample) return;
@@ -2387,16 +2710,16 @@
         chip.style.backgroundColor = getSampleColor(sample);
         header.appendChild(chip);
         const title = document.createElement('span');
-        title.textContent = sample['Name'] || sample['No.'] || 'Sample';
+        title.textContent = getSampleLabel(sample);
         header.appendChild(title);
         card.appendChild(header);
-        const entry = state.beerPaths && state.beerPaths[id];
+        const entry = ensureBeerEntry(id);
         const result = beerState.results[id];
-        if (!entry || !entry.raw || !entry.raw.trim()) {
+        if (!entry.main.raw || !entry.main.raw.trim()) {
           card.classList.add('disabled');
           const msg = document.createElement('div');
           msg.className = 'beer-empty';
-          msg.textContent = 'Enter a path length on the Beer–Lambert tab.';
+          msg.textContent = 'Add a path length in Beer–Lambert.';
           card.appendChild(msg);
         } else if (!result || result.error) {
           card.classList.add('disabled');
@@ -2405,36 +2728,18 @@
           err.textContent = result && result.error ? result.error : 'Unable to compute colours.';
           card.appendChild(err);
         } else {
-          const ref = BEER_REFERENCES[result.referenceKey] || BEER_REFERENCES.d65;
-          const summary = document.createElement('div');
-          summary.className = 'beer-summary';
-          summary.textContent = `Path ${result.pathRaw} ${result.pathUnit || ''} • ${ref.label}`;
-          card.appendChild(summary);
           const strip = document.createElement('div');
-          strip.className = 'beer-swatch-strip';
-          result.colours.slice(0, maxSwatches).forEach(col => {
+          strip.className = 'beer-compare-strip';
+          result.colours.forEach(col => {
             const swatch = document.createElement('div');
-            swatch.className = 'beer-swatch';
-            const [r,g,b] = col.srgb;
-            swatch.style.backgroundColor = `rgb(${r},${g},${b})`;
-            swatch.style.color = col.Y > 50 ? '#000' : '#fff';
-            const hex = '#' + col.srgb.map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
-            swatch.innerHTML = `<strong>${(col.depth_m * 100).toFixed(0)} cm</strong>L* ${col.L.toFixed(1)}<br>a* ${col.a.toFixed(1)}<br>b* ${col.b.toFixed(1)}<br>Y ${col.Y.toFixed(1)}%<br>${hex}`;
+            swatch.className = 'beer-compare-swatch';
+            swatch.style.backgroundColor = `rgb(${col.srgb[0]},${col.srgb[1]},${col.srgb[2]})`;
+            const span = document.createElement('span');
+            span.textContent = `${(col.depth_m * 100).toFixed(0)} cm`;
+            swatch.appendChild(span);
             strip.appendChild(swatch);
           });
           card.appendChild(strip);
-          if (result.colours.length > maxSwatches) {
-            const more = document.createElement('div');
-            more.className = 'beer-summary';
-            more.textContent = `+${result.colours.length - maxSwatches} more depths`;
-            card.appendChild(more);
-          }
-          if (result.singlePoint) {
-            const note = document.createElement('div');
-            note.className = 'beer-summary';
-            note.textContent = 'Single absorbance measurement; assumes linear Beer–Lambert scaling.';
-            card.appendChild(note);
-          }
         }
         container.appendChild(card);
       });
@@ -2442,8 +2747,8 @@
     function recomputeAllBeerSamples() {
       const selectedIds = state.selectedOrder.filter(id => state.selected.has(id));
       selectedIds.forEach(id => {
-        const entry = state.beerPaths && state.beerPaths[id];
-        if (entry && entry.raw && entry.raw.trim()) {
+        const entry = ensureBeerEntry(id);
+        if (entry.main.raw && entry.main.raw.trim()) {
           computeBeerForSample(id);
         } else {
           delete beerState.results[id];
