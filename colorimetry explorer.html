@@ -247,10 +247,10 @@
       background-color: var(--panel-bg);
       border: 1px solid var(--border);
       border-radius: 6px;
-      padding: 0.85rem;
+      padding: 0.65rem 0.75rem;
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
+      gap: 0.45rem;
     }
     .beer-sample-header {
       display: flex;
@@ -264,6 +264,10 @@
       align-items: center;
       gap: 0.5rem;
       font-weight: 600;
+    }
+    .beer-sample-code {
+      font-size: 0.75rem;
+      opacity: 0.7;
     }
     .beer-color-chip {
       width: 12px;
@@ -304,6 +308,13 @@
       font-size: 0.8rem;
       white-space: nowrap;
     }
+    .beer-main-row {
+      font-weight: normal;
+    }
+    .beer-extra-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
     .beer-extra-row.disabled {
       opacity: 0.55;
     }
@@ -338,8 +349,8 @@
       padding-bottom: 0.25rem;
     }
     .beer-swatch {
-      min-width: 120px;
-      width: 120px;
+      min-width: 100px;
+      width: 100px;
       border-radius: 4px;
       padding: 0.35rem;
       box-sizing: border-box;
@@ -392,17 +403,14 @@
       border-radius: 6px;
       padding: 0.5rem 0.75rem;
       background-color: var(--panel-bg);
-      display: flex;
-      flex-wrap: wrap;
+      display: grid;
+      grid-template-columns: minmax(160px, 220px) 1fr;
       align-items: center;
-      gap: 0.75rem;
+      column-gap: 0.75rem;
+      row-gap: 0.5rem;
     }
     .beer-compare-card.disabled {
       opacity: 0.35;
-    }
-    .beer-compare-card.disabled .beer-empty,
-    .beer-compare-card.disabled .beer-error {
-      flex-basis: 100%;
     }
     .beer-compare-header {
       display: flex;
@@ -410,15 +418,28 @@
       gap: 0.4rem;
       font-weight: 600;
       font-size: 0.9rem;
-      flex: 0 0 auto;
     }
     .beer-compare-strip {
       display: flex;
       flex-wrap: nowrap;
       gap: 0.35rem;
-      flex: 1 1 auto;
       overflow-x: auto;
       padding-bottom: 0.25rem;
+      justify-content: flex-end;
+      justify-self: end;
+    }
+    .beer-compare-card .beer-empty,
+    .beer-compare-card .beer-error {
+      grid-column: 1 / -1;
+    }
+    @media (max-width: 700px) {
+      .beer-compare-card {
+        grid-template-columns: 1fr;
+      }
+      .beer-compare-strip {
+        justify-self: stretch;
+        justify-content: flex-start;
+      }
     }
     .beer-compare-swatch {
       width: 56px;
@@ -2330,25 +2351,6 @@
       if (result.clampApplied) summaryParts.push('Negatives clamped');
       summary.textContent = summaryParts.join(' • ');
       container.appendChild(summary);
-      if (result.pathDetails && result.pathDetails.length) {
-        const list = document.createElement('ul');
-        list.className = 'beer-path-list';
-        result.pathDetails.forEach((detail, idx) => {
-          const li = document.createElement('li');
-          const label = detail.label || (idx === 0 ? 'Primary' : `Extra ${idx}`);
-          const unit = detail.pathUnit || 'mm';
-          const baseText = detail.pathRaw ? `${detail.pathRaw} ${unit}`.trim() : `${detail.pathMeters.toFixed(4)} m`;
-          const origin = detail.sampleName || '';
-          let text = `${label}: ${baseText}`;
-          if (origin) text += ` • ${origin}`;
-          if (result.baselineApplied && typeof detail.baselineShift === 'number') {
-            text += ` • baseline shift ${detail.baselineShift.toFixed(4)}`;
-          }
-          li.textContent = text;
-          list.appendChild(li);
-        });
-        container.appendChild(list);
-      }
       const strip = document.createElement('div');
       strip.className = 'beer-swatch-strip';
       result.colours.forEach(col => {
@@ -2583,29 +2585,30 @@
         titleWrap.appendChild(name);
         if (sample['No.']) {
           const code = document.createElement('span');
-          code.style.fontSize = '0.8rem';
-          code.style.opacity = '0.7';
+          code.className = 'beer-sample-code';
           code.textContent = `#${sample['No.']}`;
           titleWrap.appendChild(code);
         }
         header.appendChild(titleWrap);
         const extrasWrapper = document.createElement('div');
         extrasWrapper.className = 'beer-extra-wrapper';
-        header.appendChild(extrasWrapper);
-        card.appendChild(header);
-        const controls = document.createElement('div');
-        controls.className = 'beer-sample-controls';
-        const pathLabel = document.createElement('label');
-        pathLabel.textContent = 'Path length:';
+        const mainRow = document.createElement('div');
+        mainRow.className = 'beer-extra-row beer-main-row';
+        const mainLabel = document.createElement('span');
+        mainLabel.className = 'beer-extra-label';
+        mainLabel.textContent = 'Path length:';
+        mainRow.appendChild(mainLabel);
         const input = document.createElement('input');
         input.type = 'text';
         input.placeholder = 'e.g. 10';
         input.value = entry.main.raw || '';
         input.dataset.sampleId = id;
-        pathLabel.appendChild(input);
-        controls.appendChild(pathLabel);
-        const unitLabel = document.createElement('label');
+        mainRow.appendChild(input);
+        const unitLabel = document.createElement('span');
+        unitLabel.className = 'beer-extra-label';
         unitLabel.textContent = 'Unit:';
+        unitLabel.style.opacity = '0.7';
+        mainRow.appendChild(unitLabel);
         const select = document.createElement('select');
         BEER_PATH_UNITS.forEach(unit => {
           const opt = document.createElement('option');
@@ -2614,8 +2617,10 @@
           select.appendChild(opt);
         });
         select.value = entry.main.unit || 'mm';
-        unitLabel.appendChild(select);
-        controls.appendChild(unitLabel);
+        mainRow.appendChild(select);
+        extrasWrapper.appendChild(mainRow);
+        header.appendChild(extrasWrapper);
+        card.appendChild(header);
         input.addEventListener('input', () => {
           const current = ensureBeerEntry(id);
           current.main.raw = input.value;
@@ -2628,7 +2633,6 @@
           state.beerPaths[id] = current;
           computeBeerForSample(id);
         });
-        card.appendChild(controls);
         entry.extras.forEach((extra, extraIndex) => {
           const row = document.createElement('div');
           row.className = 'beer-extra-row';
@@ -2714,9 +2718,6 @@
           updateDisabledState();
           extrasWrapper.appendChild(row);
         });
-        if (!extrasWrapper.hasChildNodes()) {
-          extrasWrapper.remove();
-        }
         const resultsDiv = document.createElement('div');
         resultsDiv.className = 'beer-results';
         resultsDiv.dataset.sampleId = id;
@@ -2756,6 +2757,12 @@
         const title = document.createElement('span');
         title.textContent = getSampleLabel(sample);
         header.appendChild(title);
+        if (sample['No.']) {
+          const code = document.createElement('span');
+          code.className = 'beer-sample-code';
+          code.textContent = `#${sample['No.']}`;
+          header.appendChild(code);
+        }
         card.appendChild(header);
         const entry = ensureBeerEntry(id);
         const result = beerState.results[id];
@@ -2850,29 +2857,50 @@
     function hideTooltip() {
       tooltip.style.display = 'none';
     }
-    // Event listeners
-    document.getElementById('uploadZone').addEventListener('click', () => {
-      document.getElementById('fileInput').click();
-    });
-    document.getElementById('fileInput').addEventListener('change', async (ev) => {
-      const files = Array.from(ev.target.files);
-      if (files.length) setProjectTitle('');
+    async function importFiles(files) {
+      const fileArray = files.filter(Boolean);
+      if (!fileArray.length) return;
+      let addedCount = 0;
       let allWarnings = [];
-      for (const file of files) {
+      const existingIds = new Set(state.samples.map(s => s.id));
+      for (const file of fileArray) {
         const text = await file.text();
-        const {samples, warnings} = parseCSV(text);
-        assignDefaultColors(samples);
-        state.samples.push(...samples);
-        samples.forEach(s => {
-          state.selected.add(s.id);
-          state.selectedOrder.push(s.id);
+        const {samples: parsedSamples, warnings} = parseCSV(text);
+        const seenIds = new Set();
+        const uniqueSamples = [];
+        parsedSamples.forEach(sample => {
+          const key = sample.id;
+          if (!key && key !== 0) return;
+          if (existingIds.has(key) || seenIds.has(key)) return;
+          seenIds.add(key);
+          uniqueSamples.push(sample);
+        });
+        assignDefaultColors(uniqueSamples);
+        uniqueSamples.forEach(sample => {
+          state.samples.push(sample);
+          state.selected.add(sample.id);
+          if (!state.selectedOrder.includes(sample.id)) {
+            state.selectedOrder.push(sample.id);
+          }
+          existingIds.add(sample.id);
+          addedCount++;
         });
         if (warnings && warnings.length) allWarnings.push(...warnings);
+      }
+      if (addedCount) {
+        setProjectTitle('');
       }
       updateWarning(allWarnings);
       updateIlluminantOptions();
       persistState();
       scheduleDraw();
+    }
+    // Event listeners
+    document.getElementById('uploadZone').addEventListener('click', () => {
+      document.getElementById('fileInput').click();
+    });
+    document.getElementById('fileInput').addEventListener('change', async (ev) => {
+      await importFiles(Array.from(ev.target.files));
       // Clear value so selecting same file again triggers change
       ev.target.value = '';
     });
@@ -2888,23 +2916,7 @@
       ev.preventDefault();
       ev.currentTarget.classList.remove('dragover');
       const files = Array.from(ev.dataTransfer.files).filter(f => /\.csv$/i.test(f.name));
-      if (files.length) setProjectTitle('');
-      let allWarnings = [];
-      for (const file of files) {
-        const text = await file.text();
-        const {samples, warnings} = parseCSV(text);
-        assignDefaultColors(samples);
-        state.samples.push(...samples);
-        samples.forEach(s => {
-          state.selected.add(s.id);
-          state.selectedOrder.push(s.id);
-        });
-        if (warnings && warnings.length) allWarnings.push(...warnings);
-      }
-      updateWarning(allWarnings);
-      updateIlluminantOptions();
-      persistState();
-      scheduleDraw();
+      await importFiles(files);
     });
     document.getElementById('selectAll').addEventListener('change', (ev) => {
       const checked = ev.target.checked;
