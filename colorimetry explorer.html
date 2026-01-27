@@ -873,6 +873,14 @@
       const n = parseFloat(s);
       return isNaN(n) ? NaN : n;
     }
+    function sanitizeSpectrumNumber(str, decimalSeparator, saturationLimit) {
+      const numeric = sanitizeNumber(str, decimalSeparator);
+      if (isFinite(numeric)) return numeric;
+      const raw = (str ?? '').trim();
+      if (!raw) return NaN;
+      return saturationLimit;
+    }
+    const SATURATION_LIMIT = 4.0;
     const COLOR_OPTIONS = [
       '#e6194b','#3cb44b','#ffe119','#0082c8','#f58231',
       '#911eb4','#46f0f0','#f032e6','#d2f53c','#fabebe',
@@ -1325,7 +1333,7 @@
             const v = cols[idx];
             spectrum.push({
               wavelength: nm,
-              absorbance: sanitizeNumber(v, decSep)
+              absorbance: sanitizeSpectrumNumber(v, decSep, SATURATION_LIMIT)
             });
           }
         });
@@ -1890,9 +1898,15 @@
         }).filter(v => isFinite(v));
         allYs.push(...values);
       });
+      const saturationDisplay = state.logScale ? Math.log10(SATURATION_LIMIT) : SATURATION_LIMIT;
       let maxY = Math.max(...allYs);
+      if (!isFinite(maxY)) {
+        maxY = saturationDisplay;
+      }
       if (state.yMax !== null && isFinite(state.yMax) && state.yMax > 0) {
         maxY = state.yMax;
+      } else if (isFinite(saturationDisplay)) {
+        maxY = Math.max(maxY, saturationDisplay);
       }
       let minY = 0;
       if (maxY <= minY) {
@@ -1965,6 +1979,27 @@
       yTitle.setAttribute('text-anchor','middle');
       yTitle.textContent = state.logScale ? 'log10(A)' : 'Absorbance';
       svg.appendChild(yTitle);
+
+      if (isFinite(saturationDisplay) && saturationDisplay >= minY && saturationDisplay <= maxY) {
+        const satY = toY(saturationDisplay);
+        const satLine = document.createElementNS('http://www.w3.org/2000/svg','line');
+        satLine.setAttribute('x1', padding.left);
+        satLine.setAttribute('x2', width - padding.right);
+        satLine.setAttribute('y1', satY);
+        satLine.setAttribute('y2', satY);
+        satLine.setAttribute('stroke', 'var(--warning-fg)');
+        satLine.setAttribute('stroke-width', '1.2');
+        satLine.setAttribute('stroke-dasharray', '6 4');
+        svg.appendChild(satLine);
+        const satLabel = document.createElementNS('http://www.w3.org/2000/svg','text');
+        satLabel.setAttribute('x', width - padding.right - 4);
+        satLabel.setAttribute('y', satY - 6);
+        satLabel.setAttribute('font-size', fontSize);
+        satLabel.setAttribute('text-anchor','end');
+        satLabel.setAttribute('fill','var(--warning-fg)');
+        satLabel.textContent = `Saturation limit (${SATURATION_LIMIT.toFixed(1)})`;
+        svg.appendChild(satLabel);
+      }
       // x axis label
       const xTitle = document.createElementNS('http://www.w3.org/2000/svg','text');
       xTitle.setAttribute('x', (padding.left + width - padding.right)/2);
