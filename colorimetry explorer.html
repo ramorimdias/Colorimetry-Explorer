@@ -538,6 +538,9 @@
       <label><span data-i18n="labelHideUnselected">Hide non-selected:</span><input type="checkbox" id="hideUnselected" /></label>
       <input type="search" id="searchBox" data-i18n-placeholder="searchPlaceholder" placeholder="Search Name or No." />
       <button id="saveProject" data-i18n="saveProject">Save Project</button>
+      <button id="exportProjectJson" data-i18n="exportProjectJson">Export JSON</button>
+      <button id="importProjectJson" data-i18n="importProjectJson">Import JSON</button>
+      <input type="file" id="projectImport" accept="application/json,.json" style="display:none" />
       <!-- Dark mode toggle button. Clicking this button toggles a .dark class on the root element
            and persists the choice in localStorage. -->
       <button id="themeToggle" data-i18n-title="toggleDark" title="Toggle dark mode" style="margin-left:auto">🌓</button>
@@ -676,6 +679,8 @@
         labelHideUnselected: 'Hide non-selected:',
         searchPlaceholder: 'Search Name or No.',
         saveProject: 'Save Project',
+        exportProjectJson: 'Export JSON',
+        importProjectJson: 'Import JSON',
         toggleDark: 'Toggle dark mode',
         changeLanguage: 'Change language',
         hideCharts: 'Hide charts',
@@ -699,6 +704,7 @@
         ptco: 'Pt-Co',
         all: 'All',
         couldNotSaveFile: 'Could not save file.',
+        invalidProjectFile: 'Project file is invalid.',
         noDataToSave: 'No data to save.',
         noUnselectedToDelete: 'No unselected samples to delete.',
         noSamplesToDelete: 'No samples selected to delete.'
@@ -711,6 +717,8 @@
         labelHideUnselected: 'Masquer non sélectionnés\u00a0:',
         searchPlaceholder: 'Rechercher Nom ou N\u00b0',
         saveProject: 'Enregistrer le projet',
+        exportProjectJson: 'Exporter JSON',
+        importProjectJson: 'Importer JSON',
         toggleDark: 'Basculer mode sombre',
         changeLanguage: 'Changer de langue',
         hideCharts: 'Cacher les graphiques',
@@ -734,6 +742,7 @@
         ptco: 'Pt-Co',
         all: 'Tous',
         couldNotSaveFile: 'Impossible d\u2019enregistrer le fichier.',
+        invalidProjectFile: 'Le fichier du projet est invalide.',
         noDataToSave: 'Aucune donnée à enregistrer.',
         noUnselectedToDelete: 'Aucun échantillon non sélectionné à supprimer.',
         noSamplesToDelete: 'Aucun échantillon sélectionné à supprimer.'
@@ -801,6 +810,74 @@
       const h1 = document.querySelector('header h1');
       if (h1) h1.textContent = name || t('title');
     }
+    const SATURATION_LIMIT = 4.0;
+    const COLOR_OPTIONS = [
+      '#e6194b','#3cb44b','#ffe119','#0082c8','#f58231',
+      '#911eb4','#46f0f0','#f032e6','#d2f53c','#fabebe',
+      '#008080','#e6beff','#aa6e28','#800000','#aaffc3'
+    ];
+    function applyTheme() {
+      const docEl = document.documentElement;
+      docEl.classList.remove('dark', 'light');
+      docEl.classList.add(state.theme);
+    }
+    function ensureSampleColors(samples) {
+      samples.forEach((sample, idx) => {
+        if (!sample.color) {
+          sample.color = COLOR_OPTIONS[idx % COLOR_OPTIONS.length];
+        }
+      });
+    }
+    function buildProjectPayload() {
+      return { ...state, selected: Array.from(state.selected) };
+    }
+    function applyProjectData(proj) {
+      if (!proj || typeof proj !== 'object' || !Array.isArray(proj.samples)) return false;
+      state.samples = proj.samples;
+      ensureSampleColors(state.samples);
+      const sampleIds = new Set(state.samples.map(s => s.id));
+      const selected = Array.isArray(proj.selected) ? proj.selected.filter(id => sampleIds.has(id)) : [];
+      state.selected = new Set(selected);
+      const selectedOrder = Array.isArray(proj.selectedOrder) ? proj.selectedOrder.filter(id => sampleIds.has(id)) : [];
+      state.selectedOrder = selectedOrder.length ? selectedOrder : Array.from(state.selected);
+      state.beerPaths = proj.beerPaths || {};
+      [
+        'activeTab','logScale','smooth','smoothWindow','shadeArea','yMax','groupByIlluminant','hideUnselected',
+        'illuminantFilter','search','theme','language','compareRef','projectName','beerClampNeg','beerBaseline',
+        'beerForceOrigin','beerColorRef'
+      ].forEach(key => {
+        if (proj.hasOwnProperty(key)) state[key] = proj[key];
+      });
+      setProjectTitle(state.projectName || '');
+      return true;
+    }
+    function syncControlsFromState() {
+      document.getElementById('groupByIlluminant').checked = !!state.groupByIlluminant;
+      document.getElementById('hideUnselected').checked = !!state.hideUnselected;
+      document.getElementById('illuminantFilter').value = state.illuminantFilter || '';
+      document.getElementById('searchBox').value = state.search || '';
+      document.getElementById('logScale').checked = !!state.logScale;
+      document.getElementById('smoothToggle').checked = !!state.smooth;
+      document.getElementById('smoothWindow').value = state.smoothWindow;
+      document.getElementById('shadeArea').checked = !!state.shadeArea;
+      document.getElementById('yMaxInput').value = state.yMax !== null ? state.yMax : '';
+      const beerClamp = document.getElementById('beerClampNeg');
+      if (beerClamp) beerClamp.checked = !!state.beerClampNeg;
+      const beerBaseline = document.getElementById('beerBaseline');
+      if (beerBaseline) beerBaseline.checked = !!state.beerBaseline;
+      const beerForce = document.getElementById('beerForceOrigin');
+      if (beerForce) beerForce.checked = !!state.beerForceOrigin;
+      const beerRef = document.getElementById('beerColorRef');
+      if (beerRef) beerRef.value = state.beerColorRef || 'd65';
+      document.querySelectorAll('.tabs button').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === state.activeTab);
+      });
+      document.querySelectorAll('.tab-content').forEach(tc => tc.style.display = 'none');
+      const activePanel = document.getElementById('tab-' + state.activeTab);
+      if (activePanel) activePanel.style.display = 'block';
+      const languageToggle = document.getElementById('languageToggle');
+      languageToggle.textContent = state.language === 'en' ? 'FR' : 'EN';
+    }
     // Attempt to load persisted UI state
     try {
       const stored = JSON.parse(localStorage.getItem('colorimetryState') || '{}');
@@ -815,12 +892,7 @@
     if (projectEl) {
       try {
         const proj = JSON.parse(projectEl.textContent);
-        if (proj.samples) state.samples = proj.samples;
-        if (proj.selected) state.selected = new Set(proj.selected);
-        if (proj.selectedOrder) state.selectedOrder = proj.selectedOrder;
-        ['activeTab','logScale','smooth','smoothWindow','shadeArea','yMax','groupByIlluminant','theme','compareRef','projectName','beerClampNeg','beerBaseline','beerForceOrigin','beerColorRef','beerPaths'].forEach(key => {
-          if (proj.hasOwnProperty(key)) state[key] = proj[key];
-        });
+        applyProjectData(proj);
       } catch (e) {
         console.error('Failed to load project data', e);
       }
@@ -880,12 +952,6 @@
       if (!raw) return NaN;
       return saturationLimit;
     }
-    const SATURATION_LIMIT = 4.0;
-    const COLOR_OPTIONS = [
-      '#e6194b','#3cb44b','#ffe119','#0082c8','#f58231',
-      '#911eb4','#46f0f0','#f032e6','#d2f53c','#fabebe',
-      '#008080','#e6beff','#aa6e28','#800000','#aaffc3'
-    ];
     function assignDefaultColors(samples) {
       let idx = state.samples.length;
       samples.forEach(s => {
@@ -3105,9 +3171,7 @@
       // Flip between light and dark themes. Remove both theme classes and
       // then add the selected one. This overrides the OS preference.
       state.theme = state.theme === 'dark' ? 'light' : 'dark';
-      const docEl = document.documentElement;
-      docEl.classList.remove('dark', 'light');
-      docEl.classList.add(state.theme);
+      applyTheme();
       persistState();
     });
 
@@ -3119,6 +3183,74 @@
       applyTranslations();
       updateIlluminantOptions();
       persistState();
+    });
+
+    async function saveContentFile({ content, mimeType, suggestedName }) {
+      if (window.showSaveFilePicker) {
+        const handle = await window.showSaveFilePicker({
+          suggestedName,
+          types: [{ description: 'File', accept: { [mimeType]: ['.' + suggestedName.split('.').pop()] } }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(new Blob([content], { type: mimeType }));
+        await writable.close();
+      } else {
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = suggestedName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+      }
+    }
+
+    document.getElementById('exportProjectJson').addEventListener('click', async () => {
+      if (state.samples.length === 0) {
+        alert(t('noDataToSave'));
+        return;
+      }
+      try {
+        const payload = buildProjectPayload();
+        await saveContentFile({
+          content: JSON.stringify(payload, null, 2),
+          mimeType: 'application/json',
+          suggestedName: (state.projectName || 'project') + '.json'
+        });
+      } catch (err) {
+        console.error('Error exporting JSON', err);
+        alert(t('couldNotSaveFile'));
+      }
+    });
+
+    const projectImport = document.getElementById('projectImport');
+    document.getElementById('importProjectJson').addEventListener('click', () => {
+      projectImport.click();
+    });
+    projectImport.addEventListener('change', async (ev) => {
+      const file = ev.target.files && ev.target.files[0];
+      if (!file) return;
+      try {
+        const data = JSON.parse(await file.text());
+        if (!applyProjectData(data)) throw new Error('Invalid project payload');
+        applyTheme();
+        applyTranslations();
+        syncControlsFromState();
+        updateIlluminantOptions();
+        updateTable();
+        renderBeerLambert();
+        renderBeerCompareTab();
+        scheduleDraw();
+        drawDetails();
+        persistState();
+      } catch (err) {
+        console.error('Error importing JSON', err);
+        alert(t('invalidProjectFile'));
+      } finally {
+        ev.target.value = '';
+      }
     });
 
     const sidebar = document.getElementById('sidebar');
@@ -3190,7 +3322,7 @@
           dataEl.type = 'application/json';
           appScript.parentNode.insertBefore(dataEl, appScript);
         }
-        const projectState = { ...state, selected: Array.from(state.selected) };
+        const projectState = buildProjectPayload();
         dataEl.textContent = JSON.stringify(projectState);
         const html = '<!DOCTYPE html>\\n' + document.documentElement.outerHTML;
         const writable = await handle.createWritable();
@@ -3203,11 +3335,9 @@
     // existing theme classes and add either .dark or .light to explicitly
     // override the OS preference. This ensures the toggle fully controls
     // the colour scheme.
-    document.documentElement.classList.remove('dark', 'light');
-    document.documentElement.classList.add(state.theme);
+    applyTheme();
 
-    const yMaxInput = document.getElementById('yMaxInput');
-    if (state.yMax !== null) yMaxInput.value = state.yMax;
+    syncControlsFromState();
 
     updateIlluminantOptions();
     updateTable();
